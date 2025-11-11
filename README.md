@@ -34,16 +34,15 @@ m3u-streaming-platform/
 ### 1. Clone o repositório
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/CronusXd/m3u-streaming-platform.git
 cd m3u-streaming-platform
 ```
 
 ### 2. Configure o Supabase
 
 1. Crie um projeto em [supabase.com](https://supabase.com)
-2. Vá para **SQL Editor** e execute:
-   - `infra/migrations/001_initial_schema.sql`
-   - `infra/migrations/002_rls_policies.sql`
+2. Vá para **SQL Editor** e execute o script:
+   - `supabase/migrations/FINAL_SCRIPT_COMPLETO.sql`
 3. Copie as API keys de **Settings > API**
 
 ### 3. Configure as variáveis de ambiente
@@ -351,6 +350,18 @@ npm run dev
 - [hls.js](https://github.com/video-dev/hls.js) - HLS Player
 - [Tailwind CSS](https://tailwindcss.com) - CSS Framework
 
+## 📦 Scripts Importantes
+
+### Importar Playlist M3U
+
+Para importar ou atualizar sua playlist M3U no Supabase:
+
+```bash
+node scripts/import-m3u.js
+```
+
+Este script lê o arquivo `Lista.m3u` e importa todos os canais para o banco de dados Supabase.
+
 ---
 
-Feito com ❤️ por [Seu Nome]
+Feito com ❤️ por CronusXd

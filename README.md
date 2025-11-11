@@ -1,6 +1,6 @@
-# 🎬 M3U Streaming Platform
+# 📺 PlayCoreTV
 
-Plataforma profissional para gerenciar e reproduzir playlists M3U com suporte a HLS, construída com Node.js, Next.js e Supabase.
+Plataforma profissional de streaming IPTV para gerenciar e reproduzir playlists M3U com suporte a HLS, construída com Node.js, Next.js e Supabase.
 
 ## ✨ Features
 
@@ -16,7 +16,7 @@ Plataforma profissional para gerenciar e reproduzir playlists M3U com suporte a 
 ## 🏗️ Arquitetura
 
 ```
-m3u-streaming-platform/
+playcoretv/
 ├── backend/          # API REST (Node.js + Express + TypeScript)
 ├── frontend/         # Web App (Next.js 14 + React + Tailwind)
 ├── infra/           # Migrations SQL, Docker, CI/CD
@@ -34,8 +34,8 @@ m3u-streaming-platform/
 ### 1. Clone o repositório
 
 ```bash
-git clone https://github.com/CronusXd/m3u-streaming-platform.git
-cd m3u-streaming-platform
+git clone https://github.com/CronusXd/playcoretv.git
+cd playcoretv
 ```
 
 ### 2. Configure o Supabase

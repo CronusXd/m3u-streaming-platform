@@ -1,7 +1,7 @@
 {
-  "name": "m3u-streaming-platform",
+  "name": "playcoretv",
   "version": "1.0.0",
-  "description": "Professional M3U Streaming Platform with Node.js + Supabase",
+  "description": "PlayCoreTV - Professional IPTV Streaming Platform with Node.js + Supabase",
   "private": true,
   "scripts": {
     "prepare": "husky install",

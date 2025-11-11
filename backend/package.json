@@ -1,7 +1,7 @@
 {
-  "name": "m3u-streaming-backend",
+  "name": "playcoretv-backend",
   "version": "1.0.0",
-  "description": "Backend API for M3U Streaming Platform",
+  "description": "Backend API for PlayCoreTV",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",

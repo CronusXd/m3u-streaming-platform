@@ -5,7 +5,7 @@ export default function Home() {
     <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-8 dark:from-gray-900 dark:to-gray-800">
       <div className="text-center">
         <h1 className="mb-4 text-6xl font-bold text-gray-900 dark:text-white">
-          M3U Streaming Platform
+          PlayCoreTV
         </h1>
         <p className="mb-8 text-xl text-gray-600 dark:text-gray-300">
           Gerencie e reproduza suas playlists M3U com facilidade

@@ -1,4 +1,4 @@
--- M3U Streaming Platform - Row Level Security Policies
+-- PlayCoreTV - Row Level Security Policies
 -- This migration sets up RLS policies to secure data access
 
 -- Enable Row Level Security on all tables

@@ -8,8 +8,8 @@ import { FavoritesProvider } from '@/contexts/FavoritesContext';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'M3U Streaming Platform',
-  description: 'Professional M3U playlist streaming platform with HLS support',
+  title: 'PlayCoreTV',
+  description: 'Professional IPTV streaming platform with HLS support',
   keywords: ['m3u', 'streaming', 'hls', 'iptv', 'playlist'],
 };
 

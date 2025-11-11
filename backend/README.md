@@ -1,6 +1,6 @@
-# M3U Streaming Platform - Backend
+# PlayCoreTV - Backend
 
-Backend API for the M3U Streaming Platform built with Node.js, TypeScript, and Express.
+Backend API for PlayCoreTV built with Node.js, TypeScript, and Express.
 
 ## Setup
 

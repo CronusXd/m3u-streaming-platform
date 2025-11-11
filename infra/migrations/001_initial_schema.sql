@@ -1,4 +1,4 @@
--- M3U Streaming Platform - Initial Schema
+-- PlayCoreTV - Initial Schema
 -- This migration creates the core tables for the application
 
 -- Enable UUID extension

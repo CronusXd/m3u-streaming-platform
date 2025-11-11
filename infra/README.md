@@ -1,4 +1,4 @@
-# Infrastructure - M3U Streaming Platform
+# Infrastructure - PlayCoreTV
 
 This directory contains infrastructure configuration, database migrations, and deployment files.
 
@@ -23,7 +23,7 @@ infra/
 2. Sign in or create an account
 3. Click "New Project"
 4. Fill in project details:
-   - **Name**: m3u-streaming-platform
+   - **Name**: playcoretv
    - **Database Password**: (choose a strong password)
    - **Region**: (choose closest to your users)
 5. Wait for project to be created (~2 minutes)

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Este documento descreve o design detalhado para transformar a aplicação M3U Platform em uma interface moderna inspirada na Netflix. O redesign foca em criar uma experiência visual imersiva, com navegação intuitiva através de carrosséis horizontais, hero banner destacado, tema dark elegante, e animações fluidas que elevam a experiência do usuário.
+Este documento descreve o design detalhado para transformar a aplicação PlayCoreTV em uma interface moderna inspirada na Netflix. O redesign foca em criar uma experiência visual imersiva, com navegação intuitiva através de carrosséis horizontais, hero banner destacado, tema dark elegante, e animações fluidas que elevam a experiência do usuário.
 
 ### Design Principles
 

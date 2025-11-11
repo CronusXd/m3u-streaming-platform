@@ -1,6 +1,6 @@
-# M3U Streaming Platform - Frontend
+# PlayCoreTV - Frontend
 
-Frontend application for the M3U Streaming Platform built with Next.js 14, React, and Tailwind CSS.
+Frontend application for PlayCoreTV built with Next.js 14, React, and Tailwind CSS.
 
 ## Setup
 

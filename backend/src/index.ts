@@ -89,7 +89,7 @@ const server = app.listen(PORT, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
-║   🎬 M3U Streaming Platform API                          ║
+║   📺 PlayCoreTV API                                      ║
 ║                                                           ║
 ║   Environment: ${process.env.NODE_ENV || 'development'}                              ║
 ║   Port: ${PORT}                                              ║

@@ -1,5 +1,4 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Channel } from '../parsers/m3u-parser';
 
 export interface PlaylistInsert {
   owner_id: string;
@@ -26,12 +25,42 @@ export interface Playlist {
 }
 
 export interface ChannelInsert {
-  playlist_id: string;
+  name: string;
+  display_name?: string;
+  stream_url: string;
+  logo_url?: string;
+  category_id?: string;
+  tvg_id?: string;
+  is_hls: boolean;
+  is_active: boolean;
+  metadata?: Record<string, any>;
+}
+
+export interface SeriesInsert {
+  name: string;
+  logo?: string;
+  group_title?: string;
+  total_episodes: number;
+  content_type: 'series';
+}
+
+export interface SeriesRecord {
+  id: string;
+  name: string;
+  logo?: string;
+  group_title?: string;
+  total_episodes: number;
+  content_type: 'series';
+  created_at: string;
+}
+
+export interface EpisodeInsert {
+  series_id: string;
   name: string;
   url: string;
   logo?: string;
-  group_title?: string;
-  language?: string;
+  season: number;
+  episode: number;
   tvg_id?: string;
   raw_meta: Record<string, string>;
   is_hls: boolean;
@@ -60,10 +89,10 @@ export interface Favorite {
 }
 
 export class SupabaseService {
-  private client: SupabaseClient;
+  private _client: SupabaseClient;
 
   constructor(supabaseUrl: string, supabaseKey: string) {
-    this.client = createClient(supabaseUrl, supabaseKey, {
+    this._client = createClient(supabaseUrl, supabaseKey, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
@@ -71,12 +100,17 @@ export class SupabaseService {
     });
   }
 
+  // Getter público para acesso ao client
+  get client(): SupabaseClient {
+    return this._client;
+  }
+
   // ============================================
   // PLAYLIST OPERATIONS
   // ============================================
 
   async createPlaylist(data: PlaylistInsert): Promise<Playlist> {
-    const { data: playlist, error } = await this.client
+    const { data: playlist, error } = await this._client
       .from('playlists')
       .insert(data)
       .select()
@@ -90,7 +124,7 @@ export class SupabaseService {
   }
 
   async getPlaylistsByUser(userId: string): Promise<Playlist[]> {
-    const { data, error } = await this.client
+    const { data, error } = await this._client
       .from('playlists')
       .select('*')
       .eq('owner_id', userId)
@@ -104,7 +138,7 @@ export class SupabaseService {
   }
 
   async getPublicPlaylists(): Promise<Playlist[]> {
-    const { data, error } = await this.client
+    const { data, error } = await this._client
       .from('playlists')
       .select('*')
       .eq('visibility', 'public')
@@ -118,7 +152,7 @@ export class SupabaseService {
   }
 
   async getPlaylistById(id: string): Promise<Playlist | null> {
-    const { data, error } = await this.client
+    const { data, error } = await this._client
       .from('playlists')
       .select('*')
       .eq('id', id)
@@ -135,7 +169,7 @@ export class SupabaseService {
   }
 
   async updatePlaylist(id: string, data: PlaylistUpdate): Promise<Playlist> {
-    const { data: playlist, error } = await this.client
+    const { data: playlist, error } = await this._client
       .from('playlists')
       .update({ ...data, updated_at: new Date().toISOString() })
       .eq('id', id)
@@ -150,7 +184,7 @@ export class SupabaseService {
   }
 
   async deletePlaylist(id: string): Promise<void> {
-    const { error } = await this.client.from('playlists').delete().eq('id', id);
+    const { error } = await this._client.from('playlists').delete().eq('id', id);
 
     if (error) {
       throw new Error(`Failed to delete playlist: ${error.message}`);
@@ -168,7 +202,7 @@ export class SupabaseService {
     for (let i = 0; i < channels.length; i += batchSize) {
       const batch = channels.slice(i, i + batchSize);
 
-      const { error } = await this.client.from('channels').insert(batch);
+      const { error } = await this._client.from('channels').insert(batch);
 
       if (error) {
         throw new Error(`Failed to insert channels batch ${i / batchSize + 1}: ${error.message}`);
@@ -184,7 +218,7 @@ export class SupabaseService {
     const offset = (page - 1) * limit;
 
     // Get total count
-    const { count, error: countError } = await this.client
+    const { count, error: countError } = await this._client
       .from('channels')
       .select('*', { count: 'exact', head: true })
       .eq('playlist_id', playlistId)
@@ -195,7 +229,7 @@ export class SupabaseService {
     }
 
     // Get paginated channels
-    const { data, error } = await this.client
+    const { data, error } = await this._client
       .from('channels')
       .select('*')
       .eq('playlist_id', playlistId)
@@ -214,7 +248,7 @@ export class SupabaseService {
   }
 
   async getChannelById(id: string): Promise<ChannelRecord | null> {
-    const { data, error } = await this.client
+    const { data, error } = await this._client
       .from('channels')
       .select('*')
       .eq('id', id)
@@ -231,7 +265,7 @@ export class SupabaseService {
   }
 
   async searchChannels(query: string, limit: number = 50): Promise<ChannelRecord[]> {
-    const { data, error } = await this.client
+    const { data, error } = await this._client
       .from('channels')
       .select('*')
       .or(`name.ilike.%${query}%,group_title.ilike.%${query}%`)
@@ -246,7 +280,7 @@ export class SupabaseService {
   }
 
   async deleteChannelsByPlaylist(playlistId: string): Promise<void> {
-    const { error } = await this.client.from('channels').delete().eq('playlist_id', playlistId);
+    const { error } = await this._client.from('channels').delete().eq('playlist_id', playlistId);
 
     if (error) {
       throw new Error(`Failed to delete channels: ${error.message}`);
@@ -254,7 +288,7 @@ export class SupabaseService {
   }
 
   async updateChannel(id: string, data: Partial<ChannelInsert>): Promise<ChannelRecord> {
-    const { data: channel, error } = await this.client
+    const { data: channel, error } = await this._client
       .from('channels')
       .update(data)
       .eq('id', id)
@@ -273,7 +307,7 @@ export class SupabaseService {
   // ============================================
 
   async addFavorite(userId: string, channelId: string): Promise<void> {
-    const { error } = await this.client.from('favorites').insert({
+    const { error } = await this._client.from('favorites').insert({
       user_id: userId,
       channel_id: channelId,
     });
@@ -287,7 +321,7 @@ export class SupabaseService {
   }
 
   async removeFavorite(userId: string, channelId: string): Promise<void> {
-    const { error } = await this.client
+    const { error } = await this._client
       .from('favorites')
       .delete()
       .eq('user_id', userId)
@@ -299,7 +333,7 @@ export class SupabaseService {
   }
 
   async getFavoritesByUser(userId: string): Promise<ChannelRecord[]> {
-    const { data, error } = await this.client
+    const { data, error } = await this._client
       .from('favorites')
       .select('channel_id, channels(*)')
       .eq('user_id', userId)
@@ -314,7 +348,7 @@ export class SupabaseService {
   }
 
   async isFavorite(userId: string, channelId: string): Promise<boolean> {
-    const { data, error } = await this.client
+    const { data, error } = await this._client
       .from('favorites')
       .select('channel_id')
       .eq('user_id', userId)
@@ -329,5 +363,156 @@ export class SupabaseService {
     }
 
     return !!data;
+  }
+
+  // ============================================
+  // SYNC OPERATIONS (para script automático)
+  // ============================================
+
+  /**
+   * Remove TODAS as séries e episódios
+   */
+  async deleteAllSeries(): Promise<number> {
+    // Primeiro deletar episódios
+    const { count: episodesCount, error: episodesCountError } = await this._client
+      .from('episodes')
+      .select('*', { count: 'exact', head: true });
+
+    if (!episodesCountError && episodesCount && episodesCount > 0) {
+      await this._client
+        .from('episodes')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+    }
+
+    // Depois deletar séries
+    const { count, error: countError } = await this._client
+      .from('series')
+      .select('*', { count: 'exact', head: true });
+
+    if (countError) {
+      console.warn(`Aviso ao contar séries: ${countError.message}`);
+      return 0;
+    }
+
+    if (count && count > 0) {
+      const { error } = await this._client
+        .from('series')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+
+      if (error) {
+        console.warn(`Aviso ao deletar séries: ${error.message}`);
+        return 0;
+      }
+    }
+
+    return (count || 0) + (episodesCount || 0);
+  }
+
+  /**
+   * Remove TODOS os canais (usado antes de sincronização)
+   */
+  async deleteAllChannels(): Promise<number> {
+    const { count, error: countError } = await this._client
+      .from('channels')
+      .select('*', { count: 'exact', head: true });
+
+    if (countError) {
+      throw new Error(`Failed to count channels: ${countError.message}`);
+    }
+
+    const { error } = await this._client.from('channels').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+    if (error) {
+      throw new Error(`Failed to delete all channels: ${error.message}`);
+    }
+
+    return count || 0;
+  }
+
+  /**
+   * Insere canais em lote
+   */
+  async bulkUpsertChannels(channels: ChannelInsert[]): Promise<void> {
+    const batchSize = 500;
+
+    for (let i = 0; i < channels.length; i += batchSize) {
+      const batch = channels.slice(i, i + batchSize);
+
+      const { error } = await this._client
+        .from('channels')
+        .insert(batch);
+
+      if (error) {
+        throw new Error(`Failed to insert channels batch ${i / batchSize + 1}: ${error.message}`);
+      }
+    }
+  }
+
+  // ============================================
+  // SERIES OPERATIONS
+  // ============================================
+
+  async insertSeries(data: SeriesInsert): Promise<SeriesRecord> {
+    const { data: series, error } = await this._client
+      .from('series')
+      .insert(data)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to insert series: ${error.message}`);
+    }
+
+    return series;
+  }
+
+  async bulkInsertEpisodes(episodes: EpisodeInsert[]): Promise<void> {
+    const batchSize = 500;
+
+    for (let i = 0; i < episodes.length; i += batchSize) {
+      const batch = episodes.slice(i, i + batchSize);
+
+      // Usar upsert com ignoreDuplicates para evitar erro de constraint
+      const { error } = await this._client
+        .from('episodes')
+        .upsert(batch, { 
+          onConflict: 'series_id,season,episode',
+          ignoreDuplicates: true 
+        });
+
+      if (error) {
+        throw new Error(`Failed to insert episodes batch ${i / batchSize + 1}: ${error.message}`);
+      }
+    }
+  }
+
+  async getSeriesWithEpisodes(seriesId: string): Promise<any> {
+    const { data, error } = await this._client
+      .from('series')
+      .select('*, episodes(*)')
+      .eq('id', seriesId)
+      .single();
+
+    if (error) {
+      throw new Error(`Failed to get series: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  async searchSeries(query: string, limit: number = 50): Promise<SeriesRecord[]> {
+    const { data, error } = await this._client
+      .from('series')
+      .select('*')
+      .ilike('name', `%${query}%`)
+      .limit(limit);
+
+    if (error) {
+      throw new Error(`Failed to search series: ${error.message}`);
+    }
+
+    return data || [];
   }
 }

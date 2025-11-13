@@ -7,7 +7,7 @@ export const apiLimiter = rateLimit({
   message: 'Too many requests from this IP, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res) => {
+  handler: (_req, res) => {
     res.status(429).json({
       success: false,
       error: 'Too many requests from this IP, please try again later',
@@ -22,7 +22,7 @@ export const uploadLimiter = rateLimit({
   message: 'Too many upload requests, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res) => {
+  handler: (_req, res) => {
     res.status(429).json({
       success: false,
       error: 'Too many upload requests, please try again later',
@@ -37,7 +37,7 @@ export const authLimiter = rateLimit({
   message: 'Too many authentication attempts, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
-  handler: (req, res) => {
+  handler: (_req, res) => {
     res.status(429).json({
       success: false,
       error: 'Too many authentication attempts, please try again later',

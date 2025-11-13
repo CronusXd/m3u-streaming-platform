@@ -3,6 +3,36 @@ import { createClient } from '@/lib/supabase';
 const supabase = createClient();
 
 // ============================================
+// CATEGORIAS POR TIPO (usando campo 'type')
+// ============================================
+
+// Cache para IDs das categorias por tipo
+const categoryIdsCache: { [key: string]: string[] | null } = {
+  movie: null,
+  series: null,
+  live: null,
+};
+
+async function getCategoryIdsByType(type: 'movie' | 'series' | 'live'): Promise<string[]> {
+  if (categoryIdsCache[type]) {
+    return categoryIdsCache[type]!;
+  }
+
+  const { data } = await supabase
+    .from('categories')
+    .select('id')
+    .eq('type', type);
+
+  categoryIdsCache[type] = data?.map(c => c.id) || [];
+  return categoryIdsCache[type]!;
+}
+
+// Manter compatibilidade com código antigo
+async function getSeriesCategoryIds(): Promise<string[]> {
+  return getCategoryIdsByType('series');
+}
+
+// ============================================
 // CATEGORIES
 // ============================================
 
@@ -46,6 +76,127 @@ export async function getCategoriesByType(type: string): Promise<Category[]> {
 }
 
 // ============================================
+// CONTAGENS POR TIPO
+// ============================================
+
+export interface ContentCounts {
+  movies: number;
+  series: number;
+  live: number;
+  total: number;
+}
+
+export async function getContentCounts(): Promise<ContentCounts> {
+  const movieIds = await getCategoryIdsByType('movie');
+  const seriesIds = await getCategoryIdsByType('series');
+  const liveIds = await getCategoryIdsByType('live');
+
+  // Filmes: categorias do tipo 'movie'
+  const { count: movies } = await supabase
+    .from('channels')
+    .select('*', { count: 'exact', head: true })
+    .in('category_id', movieIds)
+    .eq('is_active', true);
+
+  // Séries: contar séries únicas (não episódios)
+  const { data: seriesEpisodes } = await supabase
+    .from('channels')
+    .select('metadata')
+    .in('category_id', seriesIds)
+    .eq('is_active', true)
+    .eq('metadata->is_episode', true)
+    .not('metadata->series_name', 'is', null);
+
+  const uniqueSeries = new Set(
+    seriesEpisodes?.map(ep => ep.metadata?.series_name).filter(Boolean) || []
+  );
+
+  // Canais ao vivo: categorias do tipo 'live'
+  const { count: live } = await supabase
+    .from('channels')
+    .select('*', { count: 'exact', head: true })
+    .in('category_id', liveIds)
+    .eq('is_active', true);
+
+  return {
+    movies: movies || 0,
+    series: uniqueSeries.size,
+    live: live || 0,
+    total: (movies || 0) + uniqueSeries.size + (live || 0),
+  };
+}
+
+// ============================================
+// CATEGORIAS COM CONTAGEM
+// ============================================
+
+export interface CategoryWithCount extends Category {
+  count: number;
+}
+
+export async function getCategoriesWithCounts(contentType: 'movies' | 'series' | 'live'): Promise<CategoryWithCount[]> {
+  // Mapear contentType para o valor do campo 'type' no banco
+  const typeMap = {
+    'movies': 'movie',
+    'series': 'series',
+    'live': 'live'
+  };
+  
+  const dbType = typeMap[contentType];
+  
+  // Buscar categorias filtradas pelo campo 'type'
+  const { data: categories } = await supabase
+    .from('categories')
+    .select('*')
+    .eq('type', dbType)
+    .order('name', { ascending: true });
+
+  if (!categories) {
+    return [];
+  }
+
+  // Contar canais em cada categoria
+  const categoriesWithCounts = await Promise.all(
+    categories.map(async (cat) => {
+      let count = 0;
+      
+      if (contentType === 'series') {
+        // Para séries, contar SÉRIES ÚNICAS (não episódios)
+        const { data: episodes } = await supabase
+          .from('channels')
+          .select('metadata')
+          .eq('category_id', cat.id)
+          .eq('is_active', true)
+          .eq('metadata->is_episode', true)
+          .not('metadata->series_name', 'is', null);
+        
+        // Contar séries únicas
+        const uniqueSeries = new Set(
+          episodes?.map(ep => ep.metadata?.series_name).filter(Boolean) || []
+        );
+        count = uniqueSeries.size;
+      } else {
+        // Para filmes e canais, contar normalmente
+        const { count: channelCount } = await supabase
+          .from('channels')
+          .select('*', { count: 'exact', head: true })
+          .eq('category_id', cat.id)
+          .eq('is_active', true);
+        
+        count = channelCount || 0;
+      }
+
+      return {
+        ...cat,
+        count,
+      };
+    })
+  );
+
+  return categoriesWithCounts.filter(c => c.count > 0).sort((a, b) => b.count - a.count);
+}
+
+// ============================================
 // CHANNELS
 // ============================================
 
@@ -76,8 +227,9 @@ export async function getChannels(params: {
   search?: string;
   page?: number;
   limit?: number;
+  contentType?: 'movies' | 'series' | 'live' | 'all';
 }): Promise<ChannelsResponse> {
-  const { categoryId, search, page = 1, limit = 50 } = params;
+  const { categoryId, search, page = 1, limit = 50, contentType = 'movies' } = params;
   const offset = (page - 1) * limit;
 
   let query = supabase
@@ -92,16 +244,47 @@ export async function getChannels(params: {
       category_id,
       is_hls,
       is_active,
+      metadata,
       created_at,
       categories (
         name
       )
     `, { count: 'exact' })
-    .eq('is_active', true)
-    .order('name', { ascending: true })
-    .range(offset, offset + limit - 1);
+    .eq('is_active', true);
 
-  // Filtrar por categoria
+  // Filtrar por tipo de conteúdo baseado no campo 'type' das categorias
+  if (contentType !== 'all') {
+    // Mapear contentType para o valor do campo 'type' no banco
+    const typeMap = {
+      'movies': 'movie',
+      'series': 'series',
+      'live': 'live'
+    };
+    
+    const dbType = typeMap[contentType as keyof typeof typeMap];
+    
+    // Buscar IDs das categorias do tipo especificado usando o campo 'type'
+    const { data: categories } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('type', dbType);
+    
+    if (categories && categories.length > 0) {
+      const categoryIds = categories.map(cat => cat.id);
+      query = query.in('category_id', categoryIds);
+    } else {
+      // Se não encontrou categorias, retornar vazio
+      return {
+        channels: [],
+        total: 0,
+        page,
+        limit,
+        hasMore: false,
+      };
+    }
+  }
+
+  // Filtrar por categoria específica
   if (categoryId) {
     query = query.eq('category_id', categoryId);
   }
@@ -110,6 +293,10 @@ export async function getChannels(params: {
   if (search) {
     query = query.or(`name.ilike.%${search}%,display_name.ilike.%${search}%`);
   }
+
+  query = query
+    .order('name', { ascending: true })
+    .range(offset, offset + limit - 1);
 
   const { data, error, count } = await query;
 
@@ -131,6 +318,59 @@ export async function getChannels(params: {
     limit,
     hasMore: (count || 0) > offset + limit,
   };
+}
+
+// ============================================
+// ADICIONADO RECENTEMENTE
+// ============================================
+
+export async function getRecentlyAdded(contentType: 'movies' | 'series' | 'live', limit: number = 50): Promise<Channel[]> {
+  let query = supabase
+    .from('channels')
+    .select(`
+      id,
+      tvg_id,
+      name,
+      display_name,
+      logo_url,
+      stream_url,
+      category_id,
+      is_hls,
+      is_active,
+      created_at,
+      categories (
+        name,
+        type
+      )
+    `)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  // Buscar IDs das categorias do tipo especificado
+  const categoryIds = await getCategoryIdsByType(
+    contentType === 'movies' ? 'movie' : contentType === 'series' ? 'series' : 'live'
+  );
+
+  if (categoryIds.length > 0) {
+    query = query.in('category_id', categoryIds);
+  }
+
+  if (contentType === 'series') {
+    query = query.eq('metadata->is_episode', true);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Erro ao buscar adicionados recentemente:', error);
+    throw error;
+  }
+
+  return (data || []).map((ch: any) => ({
+    ...ch,
+    category_name: ch.categories?.name || 'Sem categoria',
+  }));
 }
 
 export async function getChannelById(id: string): Promise<Channel | null> {
@@ -247,8 +487,104 @@ export async function isFavorite(userId: string, channelId: string): Promise<boo
 }
 
 // ============================================
-// SEARCH
+// SEARCH GLOBAL
 // ============================================
+
+export interface SearchResult {
+  id: string;
+  name: string;
+  logo_url?: string;
+  stream_url: string;
+  category_name?: string;
+  type: 'movie' | 'series' | 'live' | 'episode';
+  episodeCount?: number; // Para séries
+  seriesName?: string; // Para episódios
+}
+
+export async function searchGlobal(query: string, limit: number = 100): Promise<SearchResult[]> {
+  if (!query || query.length < 2) {
+    return [];
+  }
+
+  const seriesIds = await getSeriesCategoryIds();
+  const searchPattern = `%${query}%`;
+
+  const { data, error } = await supabase
+    .from('channels')
+    .select(`
+      id,
+      name,
+      logo_url,
+      stream_url,
+      metadata,
+      category_id,
+      categories (
+        name
+      )
+    `)
+    .eq('is_active', true)
+    .or(`name.ilike.${searchPattern},display_name.ilike.${searchPattern}`)
+    .order('name', { ascending: true })
+    .limit(limit);
+
+  if (error) {
+    console.error('Erro ao buscar:', error);
+    throw error;
+  }
+
+  const results: SearchResult[] = [];
+  const seriesMap = new Map<string, SearchResult>();
+
+  (data || []).forEach((ch: any) => {
+    const isInSeriesCategory = seriesIds.includes(ch.category_id);
+    const isEpisode = ch.metadata?.is_episode === true;
+    const isMovie = ch.metadata?.is_movie === true;
+
+    if (isInSeriesCategory && isEpisode) {
+      // É um episódio - agrupar por série
+      const seriesName = ch.metadata?.series_name;
+      if (seriesName) {
+        if (!seriesMap.has(seriesName)) {
+          seriesMap.set(seriesName, {
+            id: ch.id,
+            name: seriesName,
+            logo_url: ch.logo_url,
+            stream_url: ch.stream_url,
+            category_name: ch.categories?.name,
+            type: 'series',
+            episodeCount: 0,
+          });
+        }
+        seriesMap.get(seriesName)!.episodeCount! += 1;
+      }
+    } else if (isMovie || (!isInSeriesCategory && !isEpisode)) {
+      // É um filme
+      results.push({
+        id: ch.id,
+        name: ch.name,
+        logo_url: ch.logo_url,
+        stream_url: ch.stream_url,
+        category_name: ch.categories?.name,
+        type: 'movie',
+      });
+    } else {
+      // É TV ao vivo
+      results.push({
+        id: ch.id,
+        name: ch.name,
+        logo_url: ch.logo_url,
+        stream_url: ch.stream_url,
+        category_name: ch.categories?.name,
+        type: 'live',
+      });
+    }
+  });
+
+  // Adicionar séries agrupadas
+  seriesMap.forEach(series => results.push(series));
+
+  return results.sort((a, b) => a.name.localeCompare(b.name));
+}
 
 export async function searchChannels(query: string, limit: number = 50): Promise<Channel[]> {
   const { data, error } = await supabase
@@ -273,4 +609,267 @@ export async function searchChannels(query: string, limit: number = 50): Promise
     ...ch,
     category_name: ch.categories?.name || 'Sem categoria',
   }));
+}
+
+// ============================================
+// SERIES OPERATIONS
+// ============================================
+
+export interface Series {
+  name: string;
+  episodeCount: number;
+  logo?: string;
+  categoryName?: string;
+}
+
+export async function getSeries(params: {
+  categoryId?: string;
+  search?: string;
+}): Promise<Series[]> {
+  const { categoryId, search } = params;
+
+  let query = supabase
+    .from('channels')
+    .select('metadata, logo_url, categories(name)')
+    .eq('is_active', true)
+    .not('metadata->series_name', 'is', null);
+
+  if (categoryId) {
+    query = query.eq('category_id', categoryId);
+  }
+
+  if (search) {
+    query = query.ilike('metadata->>series_name', `%${search}%`);
+  }
+
+  const { data: episodes, error } = await query;
+
+  if (error) {
+    console.error('Erro ao buscar séries:', error);
+    throw error;
+  }
+
+  // Agrupar por série
+  const seriesMap = new Map<string, Series>();
+  
+  episodes?.forEach((ep: any) => {
+    const name = ep.metadata?.series_name;
+    if (name) {
+      if (!seriesMap.has(name)) {
+        seriesMap.set(name, {
+          name,
+          episodeCount: 0,
+          logo: ep.logo_url,
+          categoryName: ep.categories?.name,
+        });
+      }
+      seriesMap.get(name)!.episodeCount++;
+    }
+  });
+
+  return Array.from(seriesMap.values())
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export interface Episode {
+  id: string;
+  name: string;
+  season: number;
+  episode: number;
+  streamUrl: string;
+  logo?: string;
+}
+
+export interface SeasonGroup {
+  season: number;
+  episodes: Episode[];
+}
+
+export async function getSeriesEpisodes(seriesName: string): Promise<SeasonGroup[]> {
+  const { data: episodes, error } = await supabase
+    .from('channels')
+    .select('id, name, stream_url, logo_url, metadata')
+    .eq('is_active', true)
+    .eq('metadata->>series_name', seriesName)
+    .order('metadata->season', { ascending: true })
+    .order('metadata->episode', { ascending: true });
+
+  if (error) {
+    console.error('Erro ao buscar episódios:', error);
+    throw error;
+  }
+
+  // Agrupar por temporada
+  const seasons = new Map<number, Episode[]>();
+  
+  episodes?.forEach((ep: any) => {
+    const season = ep.metadata?.season || 1;
+    const episode = ep.metadata?.episode || 0;
+    
+    if (!seasons.has(season)) {
+      seasons.set(season, []);
+    }
+    
+    seasons.get(season)?.push({
+      id: ep.id,
+      name: ep.name,
+      season,
+      episode,
+      streamUrl: ep.stream_url,
+      logo: ep.logo_url,
+    });
+  });
+
+  return Array.from(seasons.entries())
+    .map(([season, episodes]) => ({ season, episodes }))
+    .sort((a, b) => a.season - b.season);
+}
+
+// ============================================
+// SÉRIES AGRUPADAS
+// ============================================
+
+export interface SeriesGroup {
+  name: string;
+  episodeCount: number;
+  logo?: string;
+  categoryName?: string;
+  firstEpisodeId?: string;
+}
+
+export async function getSeriesGrouped(params: {
+  categoryId?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}): Promise<{ series: SeriesGroup[]; total: number }> {
+  const { categoryId, search, page = 1, limit = 50 } = params;
+
+  // Construir filtro de categoria
+  let categoryFilter = '';
+  if (categoryId && categoryId !== 'all' && categoryId !== 'favorites' && categoryId !== 'recent') {
+    console.log('🔍 getSeriesGrouped: Filtering by specific category:', categoryId);
+    categoryFilter = `AND category_id = '${categoryId}'`;
+  } else {
+    // Se for 'all', buscar apenas categorias do tipo 'series'
+    const seriesIds = await getCategoryIdsByType('series');
+    console.log('🔍 getSeriesGrouped: categoryId is "all", using series category IDs:', seriesIds.length);
+    categoryFilter = `AND category_id IN (${seriesIds.map(id => `'${id}'`).join(',')})`;
+  }
+
+  // Construir filtro de busca
+  const searchFilter = search ? `AND metadata->>'series_name' ILIKE '%${search}%'` : '';
+
+  // Query SQL que agrupa no banco de dados (muito mais eficiente!)
+  const { data, error } = await supabase.rpc('get_series_grouped', {
+    category_filter: categoryFilter,
+    search_filter: searchFilter
+  });
+
+  if (error) {
+    console.error('❌ Erro ao buscar séries agrupadas:', error);
+    console.log('⚠️ Fallback: Usando método antigo (pode ser lento)');
+    
+    // Fallback: método antigo (buscar em lotes)
+    return await getSeriesGroupedFallback(params);
+  }
+
+  console.log('✅ getSeriesGrouped: Séries únicas encontradas:', data?.length || 0);
+
+  const allSeries: SeriesGroup[] = (data || []).map((row: any) => ({
+    name: row.series_name,
+    episodeCount: row.episode_count,
+    logo: row.logo_url,
+    categoryName: row.category_name,
+    firstEpisodeId: row.first_episode_id,
+  }));
+
+  return {
+    series: allSeries,
+    total: allSeries.length,
+  };
+}
+
+// Fallback: método antigo que busca em lotes
+async function getSeriesGroupedFallback(params: {
+  categoryId?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}): Promise<{ series: SeriesGroup[]; total: number }> {
+  const { categoryId, search } = params;
+  
+  let query = supabase
+    .from('channels')
+    .select('metadata, logo_url, id, category_id, categories(name, type)')
+    .eq('is_active', true)
+    .eq('metadata->is_episode', true)
+    .not('metadata->series_name', 'is', null);
+
+  if (categoryId && categoryId !== 'all' && categoryId !== 'favorites' && categoryId !== 'recent') {
+    query = query.eq('category_id', categoryId);
+  } else {
+    const seriesIds = await getCategoryIdsByType('series');
+    query = query.in('category_id', seriesIds);
+  }
+
+  if (search) {
+    query = query.ilike('metadata->>series_name', `%${search}%`);
+  }
+
+  // Buscar TODOS os episódios (sem limite)
+  let allEpisodes: any[] = [];
+  let from = 0;
+  const batchSize = 1000;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data: batch, error } = await query
+      .range(from, from + batchSize - 1);
+
+    if (error) {
+      console.error('Erro ao buscar lote de episódios:', error);
+      break;
+    }
+
+    if (batch && batch.length > 0) {
+      allEpisodes = allEpisodes.concat(batch);
+      from += batchSize;
+      hasMore = batch.length === batchSize;
+      console.log(`📦 Lote carregado: ${batch.length} episódios (total: ${allEpisodes.length})`);
+    } else {
+      hasMore = false;
+    }
+  }
+
+  console.log('📊 Total de episódios carregados:', allEpisodes.length);
+
+  // Agrupar por série
+  const seriesMap = new Map<string, SeriesGroup>();
+  
+  allEpisodes.forEach((ep: any) => {
+    const name = ep.metadata?.series_name;
+    if (name) {
+      if (!seriesMap.has(name)) {
+        seriesMap.set(name, {
+          name,
+          episodeCount: 0,
+          logo: ep.logo_url,
+          categoryName: ep.categories?.name,
+          firstEpisodeId: ep.id,
+        });
+      }
+      seriesMap.get(name)!.episodeCount++;
+    }
+  });
+
+  const allSeries = Array.from(seriesMap.values())
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  console.log('✅ Séries únicas encontradas (fallback):', allSeries.length);
+
+  return {
+    series: allSeries,
+    total: allSeries.length,
+  };
 }

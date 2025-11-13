@@ -79,13 +79,20 @@ export class M3UParser {
         }
 
         try {
+          // Extrair logo de múltiplas fontes possíveis
+          const logo = currentMeta['tvg-logo'] 
+            || currentMeta['logo'] 
+            || currentMeta['tvg-icon']
+            || currentMeta['icon']
+            || 'NO_IMAGE';
+
           const channel: Channel = {
             name: currentName,
             url: line,
             tvgId: currentMeta['tvg-id'],
-            tvgLogo: currentMeta['tvg-logo'],
-            groupTitle: currentMeta['group-title'],
-            language: currentMeta['language'],
+            tvgLogo: logo,
+            groupTitle: currentMeta['group-title'] || currentMeta['group'] || 'Outros',
+            language: currentMeta['language'] || currentMeta['tvg-language'] || 'pt',
             rawMeta: currentMeta,
             isHls: this.isHLS(line),
           };
@@ -114,8 +121,9 @@ export class M3UParser {
   async parseFromUrl(url: string): Promise<ParseResult> {
     try {
       const response = await axios.get(url, {
-        timeout: 30000, // 30 seconds
-        maxContentLength: 10 * 1024 * 1024, // 10MB
+        timeout: 60000, // 60 seconds
+        maxContentLength: 100 * 1024 * 1024, // 100MB
+        maxBodyLength: 100 * 1024 * 1024, // 100MB
       });
 
       return this.parse(response.data);
@@ -159,15 +167,24 @@ export class M3UParser {
     }
 
     // Extract attributes using regex
-    // Matches: attribute="value" or attribute='value'
-    const attrRegex = /(\S+?)=["']([^"']*?)["']/g;
+    // Matches: attribute="value" or attribute='value' or attribute=value
+    const attrRegex = /(\S+?)=["']([^"']*?)["']|(\S+?)=(\S+)/g;
     let match;
 
     while ((match = attrRegex.exec(metaPart)) !== null) {
-      const key = match[1];
-      const value = match[2];
-      meta[key] = value;
+      if (match[1] && match[2] !== undefined) {
+        // Formato: attribute="value" ou attribute='value'
+        meta[match[1]] = match[2];
+      } else if (match[3] && match[4]) {
+        // Formato: attribute=value (sem aspas)
+        meta[match[3]] = match[4];
+      }
     }
+
+    // Normalizar nomes de atributos comuns
+    if (meta['tvg-logo']) meta['logo'] = meta['tvg-logo'];
+    if (meta['tvg-name']) meta['name'] = meta['tvg-name'];
+    if (meta['group-title']) meta['group'] = meta['group-title'];
 
     return { meta, name };
   }

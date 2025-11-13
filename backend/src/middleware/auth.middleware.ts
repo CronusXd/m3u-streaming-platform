@@ -1,13 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { UnauthorizedError } from '../errors';
+import { env } from '../config/env';
 
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
+const supabase = createClient(env.supabase.url, env.supabase.anonKey);
 
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+export const authMiddleware = async (req: Request, _res: Response, next: NextFunction) => {
   try {
     // Get token from Authorization header
     const authHeader = req.headers.authorization;
@@ -47,7 +45,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
 
 export const optionalAuthMiddleware = async (
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ) => {
   try {
@@ -76,7 +74,7 @@ export const optionalAuthMiddleware = async (
   }
 };
 
-export const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
+export const requireAdmin = (req: Request, _res: Response, next: NextFunction) => {
   if (!req.user) {
     return next(new UnauthorizedError('Authentication required'));
   }

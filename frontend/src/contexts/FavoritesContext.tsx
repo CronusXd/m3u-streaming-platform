@@ -1,35 +1,32 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from './AuthContext';
-import toast from 'react-hot-toast';
 
-interface Channel {
+interface Favorite {
   id: string;
-  name: string;
-  logo?: string;
-  group?: string;
-  url: string;
-  isHls: boolean;
+  content_id: string;
+  content_type: 'movie' | 'series' | 'live';
+  content_name: string;
+  content_logo?: string;
+  added_at: string;
 }
 
 interface FavoritesContextType {
-  favorites: Channel[];
+  favorites: Favorite[];
+  isFavorite: (contentId: string) => boolean;
+  toggleFavorite: (contentId: string, contentType: 'movie' | 'series' | 'live', contentName: string, contentLogo?: string) => Promise<void>;
   loading: boolean;
-  addFavorite: (channel: Channel) => Promise<void>;
-  removeFavorite: (channelId: string) => Promise<void>;
-  isFavorite: (channelId: string) => boolean;
-  toggleFavorite: (channel: Channel) => Promise<void>;
 }
 
 const FavoritesContext = createContext<FavoritesContextType | undefined>(undefined);
 
-export function FavoritesProvider({ children }: { children: React.ReactNode }) {
-  const [favorites, setFavorites] = useState<Channel[]>([]);
+export function FavoritesProvider({ children }: { children: ReactNode }) {
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
 
-  // Carregar favoritos da API
   useEffect(() => {
     if (user) {
       loadFavorites();
@@ -41,85 +38,157 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
 
   const loadFavorites = async () => {
     if (!user) return;
-    
+
     try {
-      const { getFavorites } = await import('@/services/api');
-      const data = await getFavorites(user.id);
-      setFavorites(data);
+      console.log('🔍 Loading favorites for user:', user.id);
+      console.log('📧 User email:', user.email);
+      
+      const { data, error } = await supabase
+        .from('user_favorites')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('added_at', { ascending: false });
+
+      if (error) {
+        console.error('❌ Error loading favorites:', error);
+        setFavorites([]);
+      } else {
+        console.log('✅ Raw favorites from DB:', data);
+        console.log('📊 Total favorites found:', data?.length || 0);
+        console.log('📊 By type:', {
+          movies: data?.filter(f => f.content_type === 'movie').length || 0,
+          series: data?.filter(f => f.content_type === 'series').length || 0,
+          live: data?.filter(f => f.content_type === 'live').length || 0,
+        });
+        
+        const mappedFavorites = (data || []).map(fav => ({
+          id: fav.id,
+          content_id: fav.content_id,
+          content_type: fav.content_type,
+          content_name: fav.content_name,
+          content_logo: fav.content_logo,
+          added_at: fav.added_at
+        }));
+        
+        console.log('✅ Mapped favorites:', mappedFavorites);
+        setFavorites(mappedFavorites);
+      }
     } catch (error) {
-      console.error('Erro ao carregar favoritos:', error);
+      console.error('❌ Error loading favorites:', error);
+      setFavorites([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const addFavorite = async (channel: Channel) => {
+  const isFavorite = (contentId: string): boolean => {
+    return favorites.some(fav => fav.content_id === contentId);
+  };
+
+  const toggleFavorite = async (
+    contentId: string, 
+    contentType: 'movie' | 'series' | 'live',
+    contentName: string,
+    contentLogo?: string
+  ) => {
     if (!user) {
-      toast.error('Faça login para adicionar favoritos');
+      console.error('❌ No user logged in');
       return;
     }
 
-    // Optimistic update
-    const newFavorites = [...favorites, channel];
-    setFavorites(newFavorites);
-    toast.success('Adicionado aos favoritos!');
-
-    try {
-      const { addFavorite: addFav } = await import('@/services/api');
-      await addFav(user.id, channel.id);
-    } catch (error) {
-      console.error('Erro ao adicionar favorito:', error);
-      // Reverter em caso de erro
-      setFavorites(favorites);
-      toast.error('Erro ao adicionar favorito');
-    }
-  };
-
-  const removeFavorite = async (channelId: string) => {
-    if (!user) {
-      toast.error('Faça login para gerenciar favoritos');
+    // Validar parâmetros
+    if (!contentId || !contentType || !contentName) {
+      console.error('❌ Missing required parameters:', { contentId, contentType, contentName });
       return;
     }
 
-    // Optimistic update
-    const newFavorites = favorites.filter(fav => fav.id !== channelId);
-    setFavorites(newFavorites);
-    toast.success('Removido dos favoritos!');
+    const existingFavorite = favorites.find(fav => fav.content_id === contentId);
 
     try {
-      const { removeFavorite: removeFav } = await import('@/services/api');
-      await removeFav(user.id, channelId);
-    } catch (error) {
-      console.error('Erro ao remover favorito:', error);
-      // Reverter em caso de erro
-      setFavorites(favorites);
-      toast.error('Erro ao remover favorito');
+      if (existingFavorite) {
+        console.log('🗑️ Removing favorite:', { 
+          contentId, 
+          contentName: existingFavorite.content_name,
+          favoriteId: existingFavorite.id 
+        });
+        
+        const { error } = await supabase
+          .from('user_favorites')
+          .delete()
+          .eq('id', existingFavorite.id);
+
+        if (error) {
+          console.error('❌ Delete error:', error);
+          throw error;
+        }
+        
+        setFavorites(favorites.filter(fav => fav.id !== existingFavorite.id));
+        console.log('✅ Favorite removed successfully');
+      } else {
+        console.log('➕ Adding favorite:', { 
+          contentId, 
+          contentType,
+          contentName,
+          contentLogo: contentLogo || 'none',
+          userId: user.id 
+        });
+        
+        const insertData = {
+          user_id: user.id,
+          content_id: contentId,
+          content_type: contentType,
+          content_name: contentName,
+          content_logo: contentLogo || null,
+        };
+        
+        console.log('📤 Insert data:', insertData);
+        
+        const { data, error } = await supabase
+          .from('user_favorites')
+          .insert(insertData)
+          .select()
+          .single();
+
+        if (error) {
+          console.error('❌ Insert error details:', {
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+            code: error.code,
+            insertData: insertData
+          });
+          throw error;
+        }
+        
+        if (data) {
+          const newFavorite = {
+            id: data.id,
+            content_id: data.content_id,
+            content_type: data.content_type,
+            content_name: data.content_name,
+            content_logo: data.content_logo,
+            added_at: data.added_at
+          };
+          
+          setFavorites([newFavorite, ...favorites]);
+          console.log('✅ Favorite added successfully:', newFavorite);
+        }
+      }
+    } catch (error: any) {
+      console.error('❌ Error toggling favorite:', {
+        error,
+        message: error?.message,
+        details: error?.details,
+        hint: error?.hint,
+        code: error?.code,
+        stack: error?.stack
+      });
+      alert(`Erro ao adicionar favorito: ${error?.message || 'Erro desconhecido'}`);
     }
-  };
-
-  const isFavorite = (channelId: string): boolean => {
-    return favorites.some(fav => fav.id === channelId);
-  };
-
-  const toggleFavorite = async (channel: Channel) => {
-    if (isFavorite(channel.id)) {
-      await removeFavorite(channel.id);
-    } else {
-      await addFavorite(channel);
-    }
-  };
-
-  const value = {
-    favorites,
-    loading,
-    addFavorite,
-    removeFavorite,
-    isFavorite,
-    toggleFavorite,
   };
 
   return (
-    <FavoritesContext.Provider value={value}>
+    <FavoritesContext.Provider value={{ favorites, isFavorite, toggleFavorite, loading }}>
       {children}
     </FavoritesContext.Provider>
   );

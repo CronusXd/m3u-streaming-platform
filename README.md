@@ -146,11 +146,21 @@ npm test src/routes/     # Testes de API
 
 ## 📚 Documentação
 
+### Geral
 - [Quick Test Guide](QUICK_TEST_GUIDE.md) - Guia rápido de testes
 - [Testing Checklist](TESTING_CHECKLIST.md) - Checklist completo de testes
 - [Backend README](backend/README.md) - Documentação do backend
 - [Frontend README](frontend/README.md) - Documentação do frontend
 - [Infra README](infra/README.md) - Setup do Supabase e migrations
+
+### 🔄 Sistema de Sincronização M3U (Novo!)
+- [📖 Índice Completo](DOCUMENTATION_INDEX.md) - Índice de toda documentação
+- [🚀 Quick Start Visual](QUICK_START_VISUAL.md) - Guia visual passo a passo
+- [📋 Resumo das Mudanças](SYNC_UPDATE_README.md) - O que foi implementado
+- [📊 Resumo Executivo](EXECUTIVE_SUMMARY.md) - Para gestão
+- [🏗️ Arquitetura](backend/ARCHITECTURE.md) - Arquitetura técnica
+- [📚 Guia Completo](backend/SYNC_GUIDE.md) - Documentação completa
+- [🗄️ Queries SQL](backend/SQL_QUERIES.md) - Queries úteis
 
 ## 🛠️ Stack Tecnológica
 

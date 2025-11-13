@@ -7,7 +7,7 @@ const router = Router();
  * GET /healthz
  * Health check endpoint
  */
-router.get('/healthz', async (req, res) => {
+router.get('/healthz', async (_req, res) => {
   const healthcheck = {
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -49,7 +49,7 @@ router.get('/healthz', async (req, res) => {
  * GET /readyz
  * Readiness check endpoint
  */
-router.get('/readyz', (req, res) => {
+router.get('/readyz', (_req, res) => {
   // Check if application is ready to serve traffic
   const ready = {
     status: 'ready',
@@ -63,7 +63,7 @@ router.get('/readyz', (req, res) => {
  * GET /livez
  * Liveness check endpoint
  */
-router.get('/livez', (req, res) => {
+router.get('/livez', (_req, res) => {
   // Simple liveness check
   res.status(200).json({
     status: 'alive',

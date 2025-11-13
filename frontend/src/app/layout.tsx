@@ -4,6 +4,8 @@ import './globals.css';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { FavoritesProvider } from '@/contexts/FavoritesContext';
+import { WatchHistoryProvider } from '@/contexts/WatchHistoryContext';
+import QueryProvider from '@/providers/QueryProvider';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -17,11 +19,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body className={inter.className}>
-        <AuthProvider>
-          <FavoritesProvider>
-            {children}
-          </FavoritesProvider>
-        </AuthProvider>
+        <QueryProvider>
+          <AuthProvider>
+            <FavoritesProvider>
+              <WatchHistoryProvider>
+                {children}
+              </WatchHistoryProvider>
+            </FavoritesProvider>
+          </AuthProvider>
+        </QueryProvider>
         <Toaster
           position="top-right"
           toastOptions={{

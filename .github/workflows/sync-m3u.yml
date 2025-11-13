@@ -1,0 +1,49 @@
+name: Sync M3U Daily
+
+on:
+  schedule:
+    # Executa todo dia às 3h UTC (0h BRT)
+    - cron: '0 3 * * *'
+  
+  # Permite execução manual
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      
+      - name: Install dependencies
+        run: |
+          cd backend
+          npm ci
+      
+      - name: Build TypeScript
+        run: |
+          cd backend
+          npm run build
+      
+      - name: Run M3U Sync
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          M3U_SYNC_URL: ${{ secrets.M3U_SYNC_URL }}
+        run: |
+          cd backend
+          npm run sync-m3u
+      
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Sync failed! Check the logs above."
+          exit 1

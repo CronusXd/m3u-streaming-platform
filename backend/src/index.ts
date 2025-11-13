@@ -1,5 +1,7 @@
+// Load and validate environment variables FIRST
+import './config/env';
+
 import express, { Application } from 'express';
-import dotenv from 'dotenv';
 import {
   securityHeaders,
   corsOptions,
@@ -17,9 +19,6 @@ import searchRouter from './routes/search.routes';
 import favoritesRouter from './routes/favorites.routes';
 import healthRouter from './routes/health.routes';
 import metricsRouter from './routes/metrics.routes';
-
-// Load environment variables
-dotenv.config();
 
 // Create Express app
 const app: Application = express();

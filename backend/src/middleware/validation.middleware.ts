@@ -4,7 +4,7 @@ import { ValidationError } from '../errors';
 
 export const validate =
   (schema: ZodSchema, source: 'body' | 'query' | 'params' = 'body') =>
-  (req: Request, res: Response, next: NextFunction) => {
+  (req: Request, _res: Response, next: NextFunction) => {
     try {
       const data = req[source];
       schema.parse(data);

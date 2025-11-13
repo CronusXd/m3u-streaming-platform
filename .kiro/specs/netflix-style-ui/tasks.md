@@ -1,123 +1,168 @@
 # Implementation Plan - Netflix-Style UI Redesign
 
-- [ ] 1. Setup base theme and color system
+- [x] 1. Setup base theme and color system
+
+
   - Update tailwind.config.ts with Netflix-inspired color palette (black: #0a0a0a, darkGray: #141414, netflixRed: #E50914)
   - Add custom animation timing functions (ease-out-expo, ease-in-out-quart)
   - Configure responsive breakpoints for card sizes
   - Update globals.css with Netflix dark theme variables
   - _Requirements: 4.1, 4.2, 4.3, 4.4_
 
+
+
+
+
 - [ ] 2. Create NetflixLayout component
   - [ ] 2.1 Implement NetflixLayout component replacing DashboardLayout
     - Create frontend/src/components/layouts/NetflixLayout.tsx
+
     - Remove sidebar, implement full-width layout with black background
     - Add children rendering with proper spacing
     - _Requirements: 1.1, 4.1_
   
   - [ ] 2.2 Create NetflixHeader component with scroll behavior
     - Create frontend/src/components/layouts/NetflixHeader.tsx
+
+
     - Implement fixed positioning with transparent-to-solid transition on scroll
     - Add logo, navigation menu, search icon, and user menu
+
+
+
+
     - Implement scroll detection with useEffect and state management
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
   
   - [ ] 2.3 Update dashboard layout to use NetflixLayout
     - Modify frontend/src/app/dashboard/layout.tsx to use NetflixLayout
+
     - Remove old sidebar navigation code
     - _Requirements: 5.1_
 
 - [ ] 3. Implement ChannelCard component with hover effects
   - [ ] 3.1 Create base ChannelCard component
     - Create frontend/src/components/channels/ChannelCard.tsx
+
     - Implement 16:9 aspect ratio container
     - Add image rendering with fallback placeholder
     - Add HLS/HD badge display
     - _Requirements: 3.1, 3.6_
+
+
+
+
   
   - [ ] 3.2 Add hover interactions and overlay
     - Implement hover state with scale(1.1) transform
     - Create overlay with gradient background
     - Add title, category, and action buttons in overlay
+
     - Implement smooth transitions (300ms ease-out-expo)
     - _Requirements: 3.2, 3.3, 7.2_
   
   - [ ] 3.3 Integrate favorite toggle functionality
     - Add favorite button with heart icon
     - Connect to useFavorites hook
+
     - Implement optimistic UI updates
     - _Requirements: 3.3, 3.4_
 
 - [ ] 4. Build CategoryCarousel component
-  - [ ] 4.1 Create carousel container and track
+  - [x] 4.1 Create carousel container and track
+
     - Create frontend/src/components/channels/CategoryCarousel.tsx
     - Implement horizontal scroll container with hidden scrollbar
     - Add category title header
     - Setup flex layout for channel cards with gap
+
+
+
+
     - _Requirements: 2.1, 2.4_
   
   - [ ] 4.2 Implement navigation buttons
     - Add left and right arrow buttons
     - Implement scroll logic with smooth behavior
+
     - Add visibility logic (hide left arrow at start, right arrow at end)
     - Add hover opacity transition for buttons
     - _Requirements: 2.2, 2.6, 2.7_
   
   - [ ] 4.3 Add scroll position tracking
     - Implement scroll event listener with throttling
+
     - Track canScrollLeft and canScrollRight states
     - Update button visibility based on scroll position
     - _Requirements: 2.2, 2.6, 2.7_
   
   - [ ] 4.4 Integrate lazy loading for channels
     - Add intersection observer for load more trigger
+
     - Implement onLoadMore callback prop
     - Add loading indicator at end of carousel
     - _Requirements: 2.4_
+
+
+
+
 
 - [ ] 5. Create HeroBanner component
   - [ ] 5.1 Build hero banner structure
     - Create frontend/src/components/home/HeroBanner.tsx
     - Implement 80vh height container
+
     - Add background image with gradient overlay
     - Position content in bottom-left with max-width 500px
     - _Requirements: 1.1, 1.5_
   
-  - [ ] 5.2 Add channel information display
+  - [x] 5.2 Add channel information display
+
     - Display channel logo or title
     - Show category name
     - Add description text (if available)
     - Style with white text and proper hierarchy
     - _Requirements: 1.1, 1.5_
+
   
   - [ ] 5.3 Implement action buttons
     - Add "Assistir" button with play icon
     - Add "Mais Informações" button with info icon
     - Style buttons with Netflix-style (white bg for primary, gray for secondary)
+
     - Connect buttons to onPlay and onMoreInfo callbacks
     - _Requirements: 1.3, 1.4_
   
   - [ ] 5.4 Add hover animations
     - Implement subtle scale animation on button hover
+
     - Add fade-in animation on component mount
     - _Requirements: 1.2, 7.1_
 
-- [ ] 6. Implement VideoPlayerModal component
+- [x] 6. Implement VideoPlayerModal component
+
+
+
+
   - [ ] 6.1 Create modal structure
     - Create frontend/src/components/player/VideoPlayerModal.tsx
     - Implement fullscreen fixed overlay with dark backdrop
     - Add close button (X) in top-right corner
     - Setup modal content container with max-width 1400px
+
     - _Requirements: 6.1, 6.6_
   
   - [ ] 6.2 Integrate VideoPlayer component
     - Embed existing VideoPlayer component
     - Add 16:9 aspect ratio container
+
     - Pass channel stream_url and title
     - _Requirements: 6.2_
   
   - [ ] 6.3 Add channel information section
     - Display channel title, category, and HLS badge below player
     - Add description if available
+
     - Style with Netflix typography
     - _Requirements: 6.2_
   
@@ -129,59 +174,81 @@
   
   - [ ] 6.5 Add modal animations
     - Implement scale-in animation on open
+
+
+
+
     - Add fade-out animation on close
     - Handle escape key to close modal
     - _Requirements: 6.6, 7.4_
   
-  - [ ] 6.6 Handle error states in player
+  - [x] 6.6 Handle error states in player
+
     - Display elegant error message for stream failures
     - Add "Tentar Novamente" button
     - Show loading spinner during stream initialization
     - _Requirements: 6.5_
 
-- [ ] 7. Create expandable SearchBar component
+- [x] 7. Create expandable SearchBar component
+
   - [ ] 7.1 Build search bar structure
     - Create frontend/src/components/search/SearchBar.tsx
     - Implement collapsed state (icon only, 40px width)
     - Implement expanded state (input field, 300px width)
     - Add smooth width transition (300ms)
+
     - _Requirements: 8.1_
   
   - [ ] 7.2 Implement search functionality
     - Add input field with onChange handler
     - Implement debouncing (500ms delay)
+
     - Call search API with debounced query
     - _Requirements: 8.2_
+
+
+
   
   - [ ] 7.3 Create search results dropdown
     - Add dropdown container below search input
+
     - Display channel results with logo, name, and category
+
     - Highlight search term in results
     - Add click handler to select result
     - _Requirements: 8.2, 8.3, 8.4_
   
+
   - [ ] 7.4 Handle empty and error states
     - Display "Nenhum resultado encontrado" message
     - Show loading spinner during search
     - Add suggestions for empty results
+
     - _Requirements: 8.5_
 
-- [ ] 8. Build home page with all sections
+- [x] 8. Build home page with all sections
+
+
+
+
   - [ ] 8.1 Create new home page structure
     - Update frontend/src/app/dashboard/page.tsx
     - Remove old grid layout
     - Add NetflixLayout wrapper
     - _Requirements: 1.1, 2.1_
+
   
   - [ ] 8.2 Implement data fetching logic
     - Fetch featured channel for hero banner
     - Fetch all categories
     - Fetch channels per category (paginated, 20 per page)
+
     - Fetch user favorites
     - _Requirements: 1.1, 2.1, 9.1_
   
   - [ ] 8.3 Render HeroBanner with featured channel
     - Select random or most viewed channel as featured
+
     - Pass channel data to HeroBanner component
     - Handle play and more info actions
     - _Requirements: 1.1, 1.3, 1.4_
@@ -191,20 +258,26 @@
     - Render CategoryCarousel with favorites data
     - Position as first carousel after hero
     - _Requirements: 9.1, 9.2, 9.3, 9.4_
+
+
+
   
   - [ ] 8.5 Render category carousels
     - Map through categories and render CategoryCarousel for each
     - Pass category and channels data
     - Implement lazy loading for each carousel
+
     - _Requirements: 2.1, 2.4_
   
   - [ ] 8.6 Implement player modal state
     - Add state for selected channel and modal visibility
+
     - Handle play action from cards and hero banner
     - Handle close modal action
     - _Requirements: 6.1, 6.6_
 
-- [ ] 9. Add animations and transitions
+- [x] 9. Add animations and transitions
+
   - [ ] 9.1 Implement card stagger animations
     - Add CSS keyframes for fadeIn and scaleIn
     - Apply animation delays to cards (0.05s increments)

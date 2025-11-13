@@ -10,8 +10,8 @@ export const errorHandler: ErrorRequestHandler = (
   err: Error,
   req: Request,
   res: Response,
-  next: NextFunction
-) => {
+  _next: NextFunction
+): void => {
   // Log error
   logger.error({
     err: {
@@ -34,7 +34,7 @@ export const errorHandler: ErrorRequestHandler = (
 
   // Handle known operational errors
   if (err instanceof AppError) {
-    return res.status(err.statusCode).json({
+    res.status(err.statusCode).json({
       success: false,
       error: err.message,
     });

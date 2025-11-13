@@ -6,16 +6,8 @@ import { M3UParser } from '../parsers/m3u-parser';
 import {
   authMiddleware,
   uploadLimiter,
-  validateBody,
-  validateParams,
-  validateQuery,
   asyncHandler,
 } from '../middleware';
-import {
-  createPlaylistSchema,
-  playlistFiltersSchema,
-  playlistIdSchema,
-} from '../schemas/playlist.schema';
 import { ValidationError } from '../errors';
 
 const router = Router();
@@ -26,7 +18,7 @@ const upload = multer({
   limits: {
     fileSize: parseInt(process.env.MAX_FILE_SIZE_MB || '10') * 1024 * 1024, // 10MB default
   },
-  fileFilter: (req, file, cb) => {
+  fileFilter: (_req, file, cb) => {
     const allowedMimeTypes = [
       'audio/x-mpegurl',
       'application/vnd.apple.mpegurl',

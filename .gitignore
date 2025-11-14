@@ -42,5 +42,9 @@ tmp/
 temp/
 *.tmp
 
+# M3U playlist files (sensitive data)
+*.m3u
+*.m3u8
+
 # Docker
 .dockerignore

@@ -80,6 +80,26 @@ export interface ChannelRecord {
   is_hls: boolean;
   is_active: boolean;
   created_at: string;
+  
+  // TMDB Metadata
+  tmdb_id?: number;
+  tmdb_title?: string;
+  tmdb_original_title?: string;
+  tmdb_overview?: string;
+  tmdb_poster_path?: string;
+  tmdb_backdrop_path?: string;
+  tmdb_release_date?: string;
+  tmdb_runtime?: number;
+  tmdb_genres?: Array<{ id: number; name: string }>;
+  tmdb_vote_average?: number;
+  tmdb_vote_count?: number;
+  tmdb_trailer_key?: string;
+  tmdb_cast?: Array<{ name: string; character: string }>;
+  tmdb_director?: string;
+  tmdb_created_by?: Array<{ name: string }>;
+  tmdb_number_of_seasons?: number;
+  tmdb_number_of_episodes?: number;
+  tmdb_last_sync?: string;
 }
 
 export interface Favorite {

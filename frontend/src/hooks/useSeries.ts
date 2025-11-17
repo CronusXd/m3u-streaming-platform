@@ -1,5 +1,6 @@
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import { getSeriesGrouped, getCategoriesWithCounts } from '@/services/api';
+import { cacheService } from '@/services/cacheService';
 
 // Hook para buscar categorias de séries (com cache)
 export function useSeriesCategories() {
@@ -24,6 +25,35 @@ export function useSeriesInfinite(categoryId: string | null) {
   return useInfiniteQuery({
     queryKey: ['series', categoryId],
     queryFn: async ({ pageParam = 1 }) => {
+      // Tentar obter do cache primeiro (apenas primeira página)
+      if (pageParam === 1) {
+        try {
+          const cachedSeries = await cacheService.getSeries();
+          if (cachedSeries && cachedSeries.length > 0) {
+            // Filtrar por categoria se necessário
+            let filtered = cachedSeries;
+            if (categoryId && categoryId !== 'all' && categoryId !== 'recent' && categoryId !== 'history') {
+              filtered = cachedSeries.filter((serie: any) => serie.category_id === categoryId);
+            }
+            
+            // Paginar manualmente
+            const start = (pageParam - 1) * 50;
+            const end = start + 50;
+            const paginatedSeries = filtered.slice(start, end);
+            
+            return {
+              series: paginatedSeries,
+              total: filtered.length,
+              page: pageParam,
+              limit: 50
+            };
+          }
+        } catch (error) {
+          console.warn('Erro ao obter séries do cache, usando API:', error);
+        }
+      }
+
+      // Fallback para API
       const response = await getSeriesGrouped({
         categoryId: categoryId === 'all' || categoryId === 'recent' || categoryId === 'history' ? undefined : categoryId || undefined,
         page: pageParam,

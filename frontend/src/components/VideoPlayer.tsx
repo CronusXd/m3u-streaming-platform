@@ -282,11 +282,11 @@ export default function VideoPlayer({
   }
 
   return (
-    <div className="relative w-full rounded-lg overflow-hidden bg-black group">
+    <div className="relative w-full h-full bg-black group">
       {/* Video Element */}
       <video
         ref={videoRef}
-        className="w-full aspect-video"
+        className="w-full h-full object-contain"
         onClick={togglePlay}
       />
 

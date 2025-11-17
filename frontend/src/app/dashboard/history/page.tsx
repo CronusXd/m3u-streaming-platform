@@ -325,7 +325,18 @@ export default function HistoryPage() {
       {/* Modals */}
       {selectedMovie && (
         <MovieDetailsModal
-          movie={selectedMovie}
+          movie={{
+            ...selectedMovie,
+            nome: selectedMovie.name || selectedMovie.nome,
+            url_stream: selectedMovie.stream_url,
+            tipo: 'filme' as const,
+            categoria: '',
+            is_hls: true,
+            is_active: true,
+            visualizacoes: 0,
+            created_at: '',
+            updated_at: '',
+          }}
           isOpen={!!selectedMovie}
           onClose={() => setSelectedMovie(null)}
         />

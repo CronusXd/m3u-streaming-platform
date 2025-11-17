@@ -55,10 +55,16 @@ export default function SeriesEpisodesModal({
 
   useEffect(() => {
     if (isOpen && seriesName) {
+      setTmdbData(null); // Reset data
+      setTmdbEpisodes(new Map()); // Reset episodes
       loadEpisodes();
       loadTMDBData();
+    } else {
+      setTmdbData(null);
+      setTmdbEpisodes(new Map());
+      setLoading(true);
     }
-  }, [isOpen, seriesName]);
+  }, [isOpen, seriesName]); // seriesName é string, não causa loop
 
   useEffect(() => {
     if (tmdbData && selectedSeason) {
@@ -289,14 +295,6 @@ export default function SeriesEpisodesModal({
                     </div>
                   </div>
 
-                  {/* Favorite Button */}
-                  <div className="flex-shrink-0">
-                    <button className="rounded-full p-3 text-netflix-red transition-colors hover:bg-netflix-mediumGray">
-                      <svg className="h-8 w-8" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
-                      </svg>
-                    </button>
-                  </div>
                 </div>
 
                 {/* Tabs */}

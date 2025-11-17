@@ -1,294 +1,269 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import SidebarLayout from '@/components/layouts/SidebarLayout';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { FilmeCard } from '@/components/iptv/FilmeCard';
 import MovieDetailsModal from '@/components/movies/MovieDetailsModal';
-import FavoriteButton from '@/components/common/FavoriteButton';
-import { useFavorites } from '@/contexts/FavoritesContext';
-import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import type { FilmeIPTV } from '@/types/iptv';
+import { optimizedCache, type MetadataEntry } from '@/lib/cache/optimized-cache';
 
-interface Movie {
-  id: string;
-  name: string;
-  stream_url: string;
-  logo_url?: string;
-  category_name?: string;
-}
-
-interface Category {
-  id: string;
-  name: string;
-  count?: number;
-}
-
-const ITEMS_PER_PAGE = 50;
+const ITEMS_PER_PAGE = 20; // Carregar 20 filmes por vez
 
 export default function FilmesPage() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [movies, setMovies] = useState<Movie[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>('all');
-  const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
+  const [filmes, setFilmes] = useState<FilmeIPTV[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [totalMovies, setTotalMovies] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const { favorites } = useFavorites();
+  const [categorias, setCategorias] = useState<string[]>([]);
+  const [categoriaSelecionada, setCategoriaSelecionada] = useState<string>('Todas');
+  const [displayedCount, setDisplayedCount] = useState(ITEMS_PER_PAGE);
+  const [selectedFilme, setSelectedFilme] = useState<FilmeIPTV | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const fetchedRef = useRef(false); // Flag para evitar chamadas duplicadas
 
   useEffect(() => {
-    loadData();
-  }, []);
+    // Evitar chamadas duplicadas (React Strict Mode)
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
 
-  useEffect(() => {
-    if (selectedCategory) {
-      // Reset ao mudar categoria
-      setMovies([]);
-      setCurrentPage(1);
-      setHasMore(true);
-      loadMovies(selectedCategory, 1);
-    }
-  }, [selectedCategory, favorites]); // Recarregar quando favoritos mudarem
-
-  const loadData = async () => {
-    try {
-      const { getCategoriesWithCounts } = await import('@/services/api');
-      const categoriesData = await getCategoriesWithCounts('movies');
-      
-      // Agora getCategoriesWithCounts já filtra pelo campo 'type' = 'movie'
-      setCategories(categoriesData);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error loading data:', error);
-      setLoading(false);
-    }
-  };
-
-  const loadMovies = async (categoryId: string, page: number) => {
-    const isFirstPage = page === 1;
-    
-    if (isFirstPage) {
-      setLoading(true);
-    } else {
-      setLoadingMore(true);
-    }
-
-    try {
-      // Se for favoritos, filtrar pelos favoritos do contexto
-      if (categoryId === 'favorites') {
-        const movieFavorites = favorites.filter(fav => fav.content_type === 'movie');
+    async function fetchFilmes() {
+      try {
+        // Tentar carregar metadados do cache (30 dias)
+        console.log('🎬 Tentando carregar filmes do cache...');
+        const cachedMetadata = await optimizedCache.getMetadata('filme');
         
-        if (movieFavorites.length === 0) {
-          setMovies([]);
-          setTotalMovies(0);
-          setHasMore(false);
-          setCurrentPage(1);
+        let cachedData = null;
+        if (cachedMetadata.length > 0) {
+          cachedData = {
+            items: cachedMetadata,
+            categorias: [...new Set(cachedMetadata.map(item => item.categoria))].sort(),
+            timestamp: Date.now()
+          };
+        }
+
+        if (cachedData) {
+          console.log('✅ Filmes carregados do CACHE!');
+          setFilmes(cachedData.items as any);
+          setCategorias(['Todas', ...cachedData.categorias]);
+          setLoading(false);
           return;
         }
 
-        // Buscar stream_url dos canais
-        const { supabase } = await import('@/lib/supabase');
-        const contentIds = movieFavorites.map(fav => fav.content_id);
+        // Cache miss - buscar da API
+        console.log('❌ Cache miss - buscando da API...');
         
-        const { data: channelsData } = await supabase
-          .from('channels')
-          .select('id, stream_url')
-          .in('id', contentIds);
-
-        // Mapear favoritos para o formato de Movie
-        const favoriteMovies: Movie[] = movieFavorites.map(fav => {
-          const channelData = channelsData?.find(ch => ch.id === fav.content_id);
+        const response = await fetch('/api/iptv/filmes');
+        const data = await response.json();
+        
+        console.log(`✅ ${data.filmes?.length || 0} filmes recebidos da API`);
+        
+        // LIMPAR NOMES
+        const filmesLimpos = (data.filmes || []).map((filme: FilmeIPTV) => {
+          const nomeOriginal = filme.nome;
+          let nomeLimpo = nomeOriginal;
+          
+          const lastQuoteIndex = nomeOriginal.lastIndexOf('"');
+          if (lastQuoteIndex > 0) {
+            const afterQuote = nomeOriginal.substring(lastQuoteIndex + 1);
+            if (afterQuote.includes(',')) {
+              nomeLimpo = afterQuote.substring(afterQuote.indexOf(',') + 1).trim();
+            } else {
+              nomeLimpo = afterQuote.trim();
+            }
+          }
+          
           return {
-            id: fav.content_id,
-            name: fav.content_name,
-            stream_url: channelData?.stream_url || '',
-            logo_url: fav.content_logo,
+            ...filme,
+            nome: nomeLimpo
           };
         });
-
-        setMovies(favoriteMovies);
-        setTotalMovies(favoriteMovies.length);
-        setHasMore(false);
-        setCurrentPage(1);
-      } else {
-        const { getChannels } = await import('@/services/api');
         
-        const response = await getChannels({ 
-          categoryId: categoryId === 'all' || categoryId === 'recent' || categoryId === 'history' ? undefined : categoryId,
-          contentType: 'movies',
-          page,
-          limit: ITEMS_PER_PAGE 
-        });
-
-        if (isFirstPage) {
-          setMovies(response.channels);
-        } else {
-          setMovies(prev => [...prev, ...response.channels]);
+        // Extrair categorias
+        const cats = ['Todas', ...new Set(filmesLimpos.map((f: FilmeIPTV) => f.categoria).filter(Boolean))];
+        
+        // Salvar metadados no cache (30 dias)
+        try {
+          const metadata: MetadataEntry[] = filmesLimpos.map(filme => ({
+            id: filme.id,
+            nome: filme.nome,
+            tipo: 'filme' as const,
+            categoria: filme.categoria,
+            logo_url: filme.logo_url || null,
+            epg_logo: filme.epg_logo || null,
+            tmdb_vote_average: filme.tmdb_vote_average,
+            tmdb_release_date: filme.tmdb_release_date,
+            visualizacoes: filme.visualizacoes,
+            timestamp: Date.now()
+          }));
+          
+          await optimizedCache.saveMetadata(metadata);
+          console.log('💾 Filmes salvos no cache (TTL: 30 dias)');
+        } catch (cacheError) {
+          console.error('❌ Erro ao salvar no cache:', cacheError);
         }
-
-        setTotalMovies(response.total);
-        setHasMore(response.channels.length === ITEMS_PER_PAGE);
-        setCurrentPage(page);
+        
+        setFilmes(filmesLimpos);
+        setCategorias(cats as string[]);
+        
+      } catch (error) {
+        console.error('❌ Erro ao buscar filmes:', error);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error('Error loading movies:', error);
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
     }
-  };
 
-  const loadMore = () => {
-    if (!loadingMore && hasMore && selectedCategory) {
-      loadMovies(selectedCategory, currentPage + 1);
+    fetchFilmes();
+  }, []);
+
+  const filmesFiltrados = categoriaSelecionada === 'Todas'
+    ? filmes
+    : filmes.filter(f => f.categoria === categoriaSelecionada);
+
+  // Filmes a serem exibidos (lazy loading)
+  const filmesExibidos = filmesFiltrados.slice(0, displayedCount);
+  const hasMore = displayedCount < filmesFiltrados.length;
+
+  // Contar filmes por categoria
+  const categoriasComContagem = categorias.map((cat) => ({
+    nome: cat,
+    count: cat === 'Todas' 
+      ? filmes.length 
+      : filmes.filter(f => f.categoria === cat).length
+  }));
+
+  // Resetar contador quando mudar categoria
+  useEffect(() => {
+    setDisplayedCount(ITEMS_PER_PAGE);
+  }, [categoriaSelecionada]);
+
+  // Lazy loading com Intersection Observer
+  const loadMore = useCallback(() => {
+    if (hasMore) {
+      setDisplayedCount(prev => Math.min(prev + ITEMS_PER_PAGE, filmesFiltrados.length));
     }
-  };
+  }, [hasMore, filmesFiltrados.length]);
 
-  const { loadMoreRef } = useInfiniteScroll({
-    loading: loadingMore,
-    hasMore,
-    onLoadMore: loadMore,
-    threshold: 500,
-  });
+  useEffect(() => {
+    if (!loadMoreRef.current) return;
 
-  const handleMovieClick = (movie: Movie) => {
-    setSelectedMovie(movie);
-  };
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
 
-  if (loading && categories.length === 0) {
+    observerRef.current.observe(loadMoreRef.current);
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+    };
+  }, [loadMore, hasMore]);
+
+  if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-netflix-black">
+      <div className="flex items-center justify-center min-h-screen bg-gray-900">
         <div className="text-center">
-          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-netflix-red border-r-transparent"></div>
-          <p className="mt-4 text-netflix-lightGray">Carregando...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-400">Carregando filmes...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <>
-      <SidebarLayout
-        categories={categories}
-        selectedCategory={selectedCategory}
-        onCategorySelect={setSelectedCategory}
-        totalChannels={totalMovies}
-        favoritesCount={favorites.filter(fav => fav.content_type === 'movie').length}
-      >
-        <div className="border-b border-netflix-mediumGray bg-netflix-darkGray p-6">
-          <h1 className="text-2xl font-bold text-white">
-            FILMES | {selectedCategory === 'all' ? 'TODOS' : 
-                      selectedCategory === 'favorites' ? 'FAVORITOS' :
-                      selectedCategory === 'history' ? 'HISTÓRICO' :
-                      selectedCategory === 'recent' ? 'ADICIONADO RECENTEMENTE' :
-                      categories.find(c => c.id === selectedCategory)?.name}
+    <div className="flex min-h-screen bg-gray-900">
+      {/* Sidebar de Categorias */}
+      <div className="w-80 flex-shrink-0 border-r border-gray-800 bg-gray-950 p-4">
+        <h2 className="mb-4 text-xl font-bold text-white">📂 Categorias</h2>
+
+        {/* Lista de categorias */}
+        <div className="space-y-1">
+          {categoriasComContagem.map((cat) => (
+            <button
+              key={cat.nome}
+              onClick={() => setCategoriaSelecionada(cat.nome)}
+              className={`flex w-full items-center justify-between rounded-lg px-4 py-3 text-left transition-colors ${
+                categoriaSelecionada === cat.nome
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              <span className="truncate">{cat.nome}</span>
+              <span className="ml-2 rounded-full bg-gray-700 px-2 py-1 text-xs">
+                {cat.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Conteúdo Principal */}
+      <div className="flex-1 p-6">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-4xl font-bold text-white">
+            🎬 {categoriaSelecionada === 'Todas' ? 'Todos os Filmes' : categoriaSelecionada}
           </h1>
-          <p className="mt-1 text-sm text-netflix-lightGray">
-            {movies.length} de {totalMovies} filmes
+          <p className="mt-2 text-gray-400">
+            Exibindo {filmesExibidos.length} de {filmesFiltrados.length} filmes
           </p>
         </div>
 
-        <div className="p-6">
-          {loading && movies.length === 0 ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-netflix-red border-r-transparent"></div>
+        {/* Grid de Filmes */}
+        {filmesFiltrados.length === 0 ? (
+          <div className="py-20 text-center text-gray-500">
+            Nenhum filme encontrado nesta categoria
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {filmesExibidos.map((filme) => (
+                <FilmeCard
+                  key={filme.id}
+                  filme={filme}
+                  onClick={() => {
+                    setSelectedFilme(filme);
+                    setIsModalOpen(true);
+                  }}
+                />
+              ))}
             </div>
-          ) : movies.length > 0 ? (
-            <>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-                {movies.map((movie) => (
-                  <div
-                    key={movie.id}
-                    className="group relative aspect-[2/3] overflow-hidden rounded-lg bg-netflix-mediumGray transition-transform hover:scale-105 hover:z-10"
-                  >
-                    <button
-                      onClick={() => handleMovieClick(movie)}
-                      className="h-full w-full"
-                    >
-                      {movie.logo_url && movie.logo_url.startsWith('http') ? (
-                        <img
-                          src={movie.logo_url}
-                          alt={movie.name}
-                          className="h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full flex-col items-center justify-center p-4 text-center">
-                          <svg className="h-12 w-12 text-netflix-dimGray mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
-                          </svg>
-                          <span className="text-xs text-netflix-lightGray line-clamp-2">
-                            {movie.name}
-                          </span>
-                        </div>
-                      )}
 
-                      <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100">
-                        <div className="absolute bottom-0 left-0 right-0 p-3">
-                          <p className="text-xs font-semibold text-white line-clamp-2">
-                            {movie.name}
-                          </p>
-                          {movie.category_name && (
-                            <p className="text-xs text-netflix-lightGray mt-1">
-                              {movie.category_name}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Play Icon Overlay */}
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-                        <div className="rounded-full bg-netflix-red/90 p-4">
-                          <svg className="h-8 w-8 text-white" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                          </svg>
-                        </div>
-                      </div>
-                    </button>
-
-                    {/* Favorite Button */}
-                    <div className="absolute right-2 top-2 z-10">
-                      <FavoriteButton
-                        contentId={movie.id}
-                        contentType="movie"
-                        contentName={movie.name}
-                        contentLogo={movie.logo_url}
-                        size="sm"
-                      />
-                    </div>
-                  </div>
-                ))}
+            {/* Loading Trigger */}
+            {hasMore && (
+              <div ref={loadMoreRef} className="py-8 text-center">
+                <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-blue-500 border-r-transparent"></div>
+                <p className="mt-2 text-gray-400">Carregando mais filmes...</p>
               </div>
+            )}
 
-              {/* Infinite Scroll Trigger */}
-              <div ref={loadMoreRef} className="py-8">
-                {loadingMore && (
-                  <div className="flex items-center justify-center">
-                    <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-netflix-red border-r-transparent"></div>
-                    <p className="ml-3 text-netflix-lightGray">Carregando mais filmes...</p>
-                  </div>
-                )}
-                {!hasMore && movies.length > 0 && (
-                  <p className="text-center text-netflix-dimGray">
-                    Você chegou ao fim da lista
-                  </p>
-                )}
+            {!hasMore && filmesExibidos.length > 0 && (
+              <div className="py-8 text-center text-gray-500">
+                ✓ Todos os filmes foram carregados
               </div>
-            </>
-          ) : (
-            <div className="py-12 text-center">
-              <p className="text-netflix-lightGray">Nenhum filme encontrado</p>
-            </div>
-          )}
-        </div>
-      </SidebarLayout>
+            )}
+          </>
+        )}
+      </div>
 
-      {selectedMovie && (
+      {/* Modal de Detalhes */}
+      {selectedFilme && (
         <MovieDetailsModal
-          movie={selectedMovie}
-          isOpen={!!selectedMovie}
-          onClose={() => setSelectedMovie(null)}
+          movie={{
+            ...selectedFilme,
+            stream_url: selectedFilme.url_stream,
+          }}
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false);
+            setSelectedFilme(null);
+          }}
         />
       )}
-    </>
+    </div>
   );
 }

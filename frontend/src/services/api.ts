@@ -686,43 +686,57 @@ export interface SeasonGroup {
 }
 
 export async function getSeriesEpisodes(seriesName: string): Promise<SeasonGroup[]> {
-  const { data: episodes, error } = await supabase
-    .from('channels')
-    .select('id, name, stream_url, logo_url, metadata')
-    .eq('is_active', true)
-    .eq('metadata->>series_name', seriesName)
-    .order('metadata->season', { ascending: true })
-    .order('metadata->episode', { ascending: true });
-
-  if (error) {
-    console.error('Erro ao buscar episódios:', error);
-    throw error;
-  }
-
-  // Agrupar por temporada
-  const seasons = new Map<number, Episode[]>();
+  // Sanitizar o nome da série
+  const sanitizedName = seriesName.trim();
   
-  episodes?.forEach((ep: any) => {
-    const season = ep.metadata?.season || 1;
-    const episode = ep.metadata?.episode || 0;
+  console.log('🔍 Buscando temporadas para série:', sanitizedName);
+  
+  try {
+    // Usar a nova API de temporadas
+    const response = await fetch(`/api/iptv/series/${encodeURIComponent(sanitizedName)}/seasons`);
     
-    if (!seasons.has(season)) {
-      seasons.set(season, []);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     
-    seasons.get(season)?.push({
-      id: ep.id,
-      name: ep.name,
-      season,
-      episode,
-      streamUrl: ep.stream_url,
-      logo: ep.logo_url,
-    });
-  });
-
-  return Array.from(seasons.entries())
-    .map(([season, episodes]) => ({ season, episodes }))
-    .sort((a, b) => a.season - b.season);
+    const data = await response.json();
+    
+    console.log(`✅ ${data.seasons?.length || 0} temporadas encontradas`);
+    
+    // Buscar episódios de cada temporada
+    const seasonGroups: SeasonGroup[] = [];
+    
+    for (const season of data.seasons || []) {
+      const episodesResponse = await fetch(
+        `/api/iptv/series/${encodeURIComponent(sanitizedName)}/seasons/${season.temporada}/episodes`
+      );
+      
+      if (episodesResponse.ok) {
+        const episodesData = await episodesResponse.json();
+        
+        const episodes: Episode[] = (episodesData.episodes || []).map((ep: any) => ({
+          id: ep.id,
+          name: ep.nome || `Episódio ${ep.episodio}`,
+          season: ep.temporada,
+          episode: ep.episodio,
+          streamUrl: ep.stream_url,
+          logo: ep.logo_url,
+        }));
+        
+        seasonGroups.push({
+          season: season.temporada,
+          episodes,
+        });
+      }
+    }
+    
+    console.log(`✅ Total de ${seasonGroups.length} temporadas carregadas`);
+    
+    return seasonGroups.sort((a, b) => a.season - b.season);
+  } catch (error) {
+    console.error('❌ Erro ao buscar episódios:', error);
+    throw error;
+  }
 }
 
 // ============================================

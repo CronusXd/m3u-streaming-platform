@@ -1,9 +1,16 @@
 // TMDB API Integration Service
 // API Key: Você precisa criar uma conta em https://www.themoviedb.org/settings/api
 
-const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || 'YOUR_API_KEY_HERE';
+const TMDB_API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY || '';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
+
+// Verificar se TMDB está habilitado
+const TMDB_ENABLED = TMDB_API_KEY && TMDB_API_KEY.length > 0 && TMDB_API_KEY !== 'YOUR_API_KEY_HERE';
+
+if (!TMDB_ENABLED && typeof window !== 'undefined') {
+  console.warn('⚠️ TMDB desabilitado: API key não configurada');
+}
 
 export interface TMDBMovie {
   id: number;
@@ -69,6 +76,9 @@ export const getTMDBImageUrl = (path: string | null, size: 'w200' | 'w300' | 'w5
 
 // Search for a movie by name
 export const searchMovie = async (query: string, year?: number): Promise<TMDBMovie | null> => {
+  if (!TMDB_ENABLED) return null;
+  
+  // Buscar da API TMDB em tempo real
   try {
     const params = new URLSearchParams({
       api_key: TMDB_API_KEY,
@@ -85,7 +95,8 @@ export const searchMovie = async (query: string, year?: number): Promise<TMDBMov
     const data = await response.json();
 
     if (data.results && data.results.length > 0) {
-      return getMovieDetails(data.results[0].id);
+      const details = await getMovieDetails(data.results[0].id);
+      return details;
     }
 
     return null;
@@ -141,6 +152,9 @@ export const getMovieDetails = async (movieId: number): Promise<TMDBMovie | null
 
 // Search for a TV series by name
 export const searchSeries = async (query: string, year?: number): Promise<TMDBSeries | null> => {
+  if (!TMDB_ENABLED) return null;
+  
+  // Buscar da API TMDB em tempo real
   try {
     const params = new URLSearchParams({
       api_key: TMDB_API_KEY,
@@ -157,7 +171,8 @@ export const searchSeries = async (query: string, year?: number): Promise<TMDBSe
     const data = await response.json();
 
     if (data.results && data.results.length > 0) {
-      return getSeriesDetails(data.results[0].id);
+      const details = await getSeriesDetails(data.results[0].id);
+      return details;
     }
 
     return null;
@@ -218,6 +233,10 @@ export const getSeasonDetails = async (seriesId: number, seasonNumber: number): 
 
 // Extract year from movie/series name
 export const extractYear = (name: string): { cleanName: string; year?: number } => {
+  if (!name || typeof name !== 'string') {
+    return { cleanName: '' };
+  }
+  
   const yearMatch = name.match(/\((\d{4})\)/);
   if (yearMatch) {
     return {

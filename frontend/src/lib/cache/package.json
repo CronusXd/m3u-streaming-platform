@@ -1,0 +1,42 @@
+{
+  "name": "@playcoreTV/cache",
+  "version": "1.0.0",
+  "description": "Sistema completo de cache IndexedDB para aplicações web",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "cache",
+    "indexeddb",
+    "storage",
+    "offline",
+    "pwa",
+    "compression",
+    "chunking",
+    "download",
+    "sync"
+  ],
+  "author": "PlayCoreTV",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "browser": {
+    "indexedDB": true,
+    "localStorage": true
+  },
+  "exports": {
+    ".": "./index.js",
+    "./CacheManager": "./CacheManager.js",
+    "./config": "./cache.config.js",
+    "./utils": "./feature-detection.js"
+  },
+  "files": [
+    "*.js",
+    "*.md",
+    "!*.test.js",
+    "!cache-example.js"
+  ]
+}

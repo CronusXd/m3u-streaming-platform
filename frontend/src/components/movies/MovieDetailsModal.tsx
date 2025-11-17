@@ -3,14 +3,14 @@
 import { useState, useEffect } from 'react';
 import VideoPlayerModal from '@/components/player/VideoPlayerModal';
 import { searchMovie, getTMDBImageUrl, formatRuntime, formatRating, extractYear, type TMDBMovie } from '@/services/tmdb';
+import { getPosterUrl, getBackdropUrl } from '@/utils/tmdb-helpers';
+import { optimizedCache } from '@/lib/cache/optimized-cache';
+import type { ConteudoIPTV } from '@/types/iptv';
 
 interface MovieDetailsModalProps {
-  movie: {
-    id: string;
-    name: string;
+  movie: (ConteudoIPTV & {
     stream_url: string;
-    logo_url?: string;
-  } | null;
+  }) | null;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -20,34 +20,106 @@ export default function MovieDetailsModal({
   isOpen,
   onClose,
 }: MovieDetailsModalProps) {
-  const [tmdbData, setTmdbData] = useState<TMDBMovie | null>(null);
+  const [tmdbData, setTmdbData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [showPlayer, setShowPlayer] = useState(false);
   const [showTrailer, setShowTrailer] = useState(false);
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [loadingStream, setLoadingStream] = useState(false);
 
   useEffect(() => {
     if (isOpen && movie) {
       loadMovieData();
+    } else {
+      setTmdbData(null);
+      setLoading(true);
     }
-  }, [isOpen, movie]);
+  }, [isOpen, movie?.id]);
 
   const loadMovieData = async () => {
-    if (!movie) return;
+    if (!movie || !movie.nome) return;
     
+    // Buscar da API TMDB em tempo real
     setLoading(true);
     try {
-      const { cleanName, year } = extractYear(movie.name);
+      const { cleanName, year } = extractYear(movie.nome || '');
       const data = await searchMovie(cleanName, year);
-      setTmdbData(data);
+      
+      if (data) {
+        setTmdbData(data);
+      } else {
+        // Fallback para dados do banco se API falhar
+        setTmdbData({
+          title: movie.tmdb_title || movie.nome,
+          overview: movie.tmdb_overview,
+          poster_path: movie.tmdb_poster_path,
+          backdrop_path: movie.tmdb_backdrop_path,
+          release_date: movie.tmdb_release_date,
+          runtime: movie.tmdb_runtime,
+          genres: movie.tmdb_genres || [],
+          vote_average: movie.tmdb_vote_average || movie.avaliacao,
+          director: movie.tmdb_director,
+          cast: movie.tmdb_cast || []
+        });
+      }
     } catch (error) {
       console.error('Error loading movie data:', error);
+      // Usar dados do banco como fallback
+      setTmdbData({
+        title: movie.tmdb_title || movie.nome,
+        overview: movie.tmdb_overview,
+        vote_average: movie.tmdb_vote_average || movie.avaliacao
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePlay = () => {
-    setShowPlayer(true);
+  const handlePlay = async () => {
+    // Se já tem stream_url, usar direto
+    if (movie?.stream_url) {
+      setStreamUrl(movie.stream_url);
+      setShowPlayer(true);
+      return;
+    }
+
+    // Caso contrário, buscar do cache ou API
+    setLoadingStream(true);
+    try {
+      // Tentar buscar do cache de streams (1 dia)
+      const cachedStream = await optimizedCache.getStream(movie!.id);
+      
+      if (cachedStream) {
+        console.log('✅ Stream carregado do cache');
+        setStreamUrl(cachedStream.url_stream);
+        setShowPlayer(true);
+        return;
+      }
+
+      // Cache miss - buscar da API
+      console.log('❌ Stream não encontrado no cache, buscando da API...');
+      const response = await fetch(`/api/iptv/filmes/${movie!.id}/stream`);
+      
+      if (!response.ok) {
+        throw new Error('Erro ao buscar stream');
+      }
+      
+      const data = await response.json();
+      
+      if (data.url_stream) {
+        // Salvar no cache (1 dia)
+        await optimizedCache.saveStream(movie!.id, data.url_stream, data.is_hls || true);
+        setStreamUrl(data.url_stream);
+        setShowPlayer(true);
+      } else {
+        alert('Stream não disponível para este filme');
+      }
+    } catch (error) {
+      console.error('❌ Erro ao buscar stream:', error);
+      alert('Erro ao carregar stream. Tente novamente.');
+    } finally {
+      setLoadingStream(false);
+    }
   };
 
   const handlePlayTrailer = () => {
@@ -58,17 +130,27 @@ export default function MovieDetailsModal({
 
   if (!isOpen || !movie) return null;
 
+  // Usar dados TMDB com fallback inteligente
   const posterUrl = tmdbData?.poster_path 
     ? getTMDBImageUrl(tmdbData.poster_path, 'w500')
-    : movie.logo_url;
+    : getPosterUrl(movie, 'w500');
 
   const backdropUrl = tmdbData?.backdrop_path
     ? getTMDBImageUrl(tmdbData.backdrop_path, 'original')
-    : null;
+    : getBackdropUrl(movie, 'original');
 
   const trailerUrl = tmdbData?.videos?.[0]
     ? `https://www.youtube.com/embed/${tmdbData.videos[0].key}?autoplay=1`
     : null;
+  
+  const title = tmdbData?.title || movie.tmdb_title || movie.nome;
+  const overview = tmdbData?.overview || movie.tmdb_overview;
+  const releaseDate = tmdbData?.release_date || movie.tmdb_release_date;
+  const runtime = tmdbData?.runtime || movie.tmdb_runtime;
+  const voteAverage = tmdbData?.vote_average || movie.tmdb_vote_average || movie.avaliacao;
+  const director = tmdbData?.director || movie.tmdb_director;
+  const genres = tmdbData?.genres || movie.tmdb_genres || [];
+  const cast = tmdbData?.cast || movie.tmdb_cast || [];
 
   return (
     <>
@@ -106,10 +188,10 @@ export default function MovieDetailsModal({
               <div className="flex gap-8">
                 {/* Movie Poster */}
                 <div className="flex-shrink-0">
-                  {posterUrl ? (
+                  {posterUrl || backdropUrl ? (
                     <img
-                      src={posterUrl}
-                      alt={movie.name}
+                      src={posterUrl || backdropUrl || ''}
+                      alt={title}
                       className="h-96 w-64 rounded-lg object-cover shadow-2xl"
                     />
                   ) : (
@@ -126,11 +208,11 @@ export default function MovieDetailsModal({
                   {/* Title and Rating */}
                   <div>
                     <h1 className="text-4xl font-bold text-white">
-                      {tmdbData?.title || movie.name}
+                      {title}
                     </h1>
-                    {tmdbData?.release_date && (
+                    {releaseDate && (
                       <p className="mt-1 text-xl text-netflix-lightGray">
-                        ({new Date(tmdbData.release_date).getFullYear()})
+                        ({new Date(releaseDate).getFullYear()})
                       </p>
                     )}
                     <div className="mt-3 flex items-center gap-2">
@@ -138,7 +220,7 @@ export default function MovieDetailsModal({
                         <svg
                           key={i}
                           className={`h-6 w-6 ${
-                            i < formatRating(tmdbData?.vote_average || 0)
+                            i < formatRating(voteAverage || 0)
                               ? 'text-yellow-400'
                               : 'text-netflix-dimGray'
                           }`}
@@ -148,9 +230,9 @@ export default function MovieDetailsModal({
                           <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                         </svg>
                       ))}
-                      {tmdbData?.vote_average && (
+                      {voteAverage && (
                         <span className="ml-2 text-netflix-lightGray">
-                          {tmdbData.vote_average.toFixed(1)}/10
+                          {voteAverage.toFixed(1)}/10
                         </span>
                       )}
                     </div>
@@ -158,52 +240,52 @@ export default function MovieDetailsModal({
 
                   {/* Info Grid */}
                   <div className="grid grid-cols-2 gap-4 text-sm">
-                    {tmdbData?.director && (
+                    {director && (
                       <div>
                         <span className="text-netflix-dimGray">Dirigido por:</span>
-                        <p className="text-white">{tmdbData.director}</p>
+                        <p className="text-white">{director}</p>
                       </div>
                     )}
-                    {tmdbData?.release_date && (
+                    {releaseDate && (
                       <div>
                         <span className="text-netflix-dimGray">Data de lançamento:</span>
                         <p className="text-white">
-                          {new Date(tmdbData.release_date).toLocaleDateString('pt-BR')}
+                          {new Date(releaseDate).toLocaleDateString('pt-BR')}
                         </p>
                       </div>
                     )}
-                    {tmdbData?.runtime && (
+                    {runtime && (
                       <div>
                         <span className="text-netflix-dimGray">Duração:</span>
-                        <p className="text-white">{formatRuntime(tmdbData.runtime)}</p>
+                        <p className="text-white">{formatRuntime(runtime)}</p>
                       </div>
                     )}
-                    {tmdbData?.genres && tmdbData.genres.length > 0 && (
+                    {genres && genres.length > 0 && (
                       <div>
                         <span className="text-netflix-dimGray">Gênero:</span>
                         <p className="text-white">
-                          {tmdbData.genres.map(g => g.name).join(', ')}
+                          {genres.map(g => g.name).join(', ')}
                         </p>
                       </div>
                     )}
                   </div>
 
                   {/* Cast */}
-                  {tmdbData?.cast && tmdbData.cast.length > 0 && (
+                  {cast && cast.length > 0 && (
                     <div>
-                      <span className="text-netflix-dimGray">Fundida:</span>
+                      <span className="text-netflix-dimGray">Elenco:</span>
                       <p className="mt-1 text-white">
-                        {tmdbData.cast.map(c => c.name).join(', ')}
+                        {cast.map(c => c.name).join(', ')}
                       </p>
                     </div>
                   )}
 
                   {/* Overview */}
-                  {tmdbData?.overview && (
+                  {overview && (
                     <div>
                       <span className="text-netflix-dimGray">Sinopse:</span>
                       <p className="mt-2 text-netflix-lightGray leading-relaxed">
-                        {tmdbData.overview}
+                        {overview}
                       </p>
                     </div>
                   )}
@@ -212,32 +294,36 @@ export default function MovieDetailsModal({
                   <div className="flex gap-4 pt-4">
                     <button
                       onClick={handlePlay}
-                      className="flex items-center gap-2 rounded-lg bg-blue-500 px-8 py-3 font-semibold text-white transition-colors hover:bg-blue-600"
+                      disabled={loadingStream}
+                      className="flex items-center gap-3 rounded-lg bg-netflix-red px-12 py-4 text-lg font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                      </svg>
-                      Play
+                      {loadingStream ? (
+                        <>
+                          <div className="h-7 w-7 animate-spin rounded-full border-4 border-white border-r-transparent"></div>
+                          Carregando...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="h-7 w-7" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                          </svg>
+                          Play
+                        </>
+                      )}
                     </button>
 
                     {trailerUrl && (
                       <button
                         onClick={handlePlayTrailer}
-                        className="flex items-center gap-2 rounded-lg bg-netflix-mediumGray px-6 py-3 font-semibold text-white transition-colors hover:bg-netflix-dimGray"
+                        className="flex items-center gap-3 rounded-lg bg-netflix-red px-10 py-4 text-lg font-bold text-white transition-colors hover:bg-red-700"
                       >
-                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         Trailer
                       </button>
                     )}
-
-                    <button className="rounded-full p-3 text-netflix-red transition-colors hover:bg-netflix-mediumGray">
-                      <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
-                      </svg>
-                    </button>
                   </div>
                 </div>
               </div>
@@ -271,17 +357,20 @@ export default function MovieDetailsModal({
       )}
 
       {/* Video Player Modal */}
-      {showPlayer && (
+      {showPlayer && streamUrl && (
         <VideoPlayerModal
           channel={{
             id: movie.id,
-            name: movie.name,
-            stream_url: movie.stream_url,
-            logo_url: movie.logo_url,
+            name: movie.nome,
+            stream_url: streamUrl,
+            logo_url: posterUrl || undefined,
             is_hls: true,
           }}
           isOpen={showPlayer}
-          onClose={() => setShowPlayer(false)}
+          onClose={() => {
+            setShowPlayer(false);
+            setStreamUrl(null);
+          }}
           onChannelSelect={() => {}}
         />
       )}

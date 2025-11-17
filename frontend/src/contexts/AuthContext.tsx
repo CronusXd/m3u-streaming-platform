@@ -52,12 +52,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password,
       });
 
-      if (error) throw error;
+      if (error) {
+        // Tratamento específico para rate limit
+        if (error.status === 429 || error.message.includes('rate limit')) {
+          toast.error('Muitas tentativas de login. Aguarde alguns minutos e tente novamente.');
+          throw new Error('Rate limit atingido. Aguarde alguns minutos.');
+        }
+        throw error;
+      }
 
       toast.success('Login realizado com sucesso!');
       router.push('/dashboard');
     } catch (error: any) {
-      toast.error(error.message || 'Erro ao fazer login');
+      const errorMessage = error.message || 'Erro ao fazer login';
+      toast.error(errorMessage);
       throw error;
     }
   };
@@ -72,7 +80,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Tratamento específico para rate limit
+        if (error.status === 429 || error.message.includes('rate limit')) {
+          toast.error('Muitas tentativas. Aguarde alguns minutos e tente novamente.');
+          throw new Error('Rate limit atingido. Aguarde alguns minutos.');
+        }
+        throw error;
+      }
 
       // Verificar se o email já existe
       if (data?.user && !data.session) {

@@ -1,318 +1,270 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import SidebarLayout from '@/components/layouts/SidebarLayout';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import SeriesEpisodesModal from '@/components/series/SeriesEpisodesModal';
-import FavoriteButton from '@/components/common/FavoriteButton';
-import { useFavorites } from '@/contexts/FavoritesContext';
-import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { optimizedCache, type MetadataEntry } from '@/lib/cache/optimized-cache';
 
-interface SeriesItem {
-  name: string;
-  episodeCount: number;
-  logo?: string;
-  categoryName?: string;
-  firstEpisodeId?: string;
+const ITEMS_PER_PAGE = 20;
+
+interface Serie {
+  nome: string;
+  categoria: string;
+  logo_url: string | null;
+  backdrop_url: string | null;
+  totalTemporadas: number;
+  totalEpisodios: number;
+  visualizacoes?: number;
 }
-
-interface Category {
-  id: string;
-  name: string;
-  count?: number;
-}
-
-const ITEMS_PER_PAGE = 50;
 
 export default function SeriesPage() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [series, setSeries] = useState<SeriesItem[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>('all');
-  const [selectedSeries, setSelectedSeries] = useState<string | null>(null);
+  const [series, setSeries] = useState<Serie[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [totalSeries, setTotalSeries] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const { favorites } = useFavorites();
+  const [categorias, setCategorias] = useState<string[]>([]);
+  const [categoriaSelecionada, setCategoriaSelecionada] = useState<string>('Todas');
+  const [displayedCount, setDisplayedCount] = useState(ITEMS_PER_PAGE);
+  const [selectedSerie, setSelectedSerie] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const fetchedRef = useRef(false); // Flag para evitar chamadas duplicadas
 
   useEffect(() => {
-    loadData();
+    // Evitar chamadas duplicadas (React Strict Mode)
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+    
+    // Limpar cache antigo ao montar o componente
+    const clearOldCache = async () => {
+      try {
+        await optimizedCache.clearMetadata('serie');
+        console.log('🗑️ Cache antigo de séries limpo');
+      } catch (error) {
+        console.error('Erro ao limpar cache:', error);
+      }
+    };
+    
+    clearOldCache().then(() => fetchSeries());
   }, []);
 
-  useEffect(() => {
-    if (selectedCategory) {
-      // Reset ao mudar categoria
-      setSeries([]);
-      setCurrentPage(1);
-      setHasMore(true);
-      loadSeries(selectedCategory, 1);
-    }
-  }, [selectedCategory, favorites]); // Recarregar quando favoritos mudarem
-
-  const loadData = async () => {
+  const fetchSeries = async () => {
     try {
-      const { getCategoriesWithCounts, getSeriesGrouped } = await import('@/services/api');
-      const categoriesData = await getCategoriesWithCounts('series');
+      // SEMPRE buscar da API (que já retorna séries agrupadas)
+      console.log('📺 Buscando séries da API...');
+
+      const response = await fetch('/api/iptv/series');
       
-      // Buscar total de TODAS as séries para mostrar no "TODAS AS SÉRIES"
-      const allSeriesResponse = await getSeriesGrouped({ categoryId: 'all' });
-      
-      console.log('🔍 DEBUG loadData:');
-      console.log('📊 Categories:', categoriesData.length);
-      console.log('📊 Total series from getSeriesGrouped:', allSeriesResponse.total);
-      console.log('📊 Series array length:', allSeriesResponse.series.length);
-      
-      setCategories(categoriesData);
-      setTotalSeries(allSeriesResponse.total);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error loading data:', error);
-      setLoading(false);
-    }
-  };
-
-  const loadSeries = async (categoryId: string, page: number) => {
-    const isFirstPage = page === 1;
-    
-    if (isFirstPage) {
-      setLoading(true);
-    } else {
-      setLoadingMore(true);
-    }
-
-    try {
-      // Se for favoritos, filtrar pelos favoritos do contexto
-      if (categoryId === 'favorites') {
-        const seriesFavorites = favorites.filter(fav => fav.content_type === 'series');
-        
-        if (seriesFavorites.length === 0) {
-          setSeries([]);
-          setTotalSeries(0);
-          setHasMore(false);
-          setCurrentPage(1);
-          return;
-        }
-
-        // Buscar informações dos episódios
-        const { supabase } = await import('@/lib/supabase');
-        const contentIds = seriesFavorites.map(fav => fav.content_id);
-        
-        const { data: channelsData } = await supabase
-          .from('channels')
-          .select('id, name')
-          .in('id', contentIds);
-
-        // Mapear favoritos para o formato de SeriesItem
-        const favoriteSeries: SeriesItem[] = seriesFavorites.map(fav => {
-          const channelData = channelsData?.find(ch => ch.id === fav.content_id);
-          return {
-            name: fav.content_name,
-            logo: fav.content_logo,
-            episodeCount: 0, // Não temos essa informação nos favoritos
-            firstEpisodeId: fav.content_id,
-          };
-        });
-
-        // Ordenar alfabeticamente (com validação)
-        favoriteSeries.sort((a, b) => {
-          const nameA = a.name || '';
-          const nameB = b.name || '';
-          return nameA.localeCompare(nameB);
-        });
-
-        setSeries(favoriteSeries);
-        setTotalSeries(favoriteSeries.length);
-        setHasMore(false);
-        setCurrentPage(1);
-      } else {
-        const { getSeriesGrouped } = await import('@/services/api');
-        
-        const response = await getSeriesGrouped({ 
-          categoryId: categoryId === 'all' || categoryId === 'recent' || categoryId === 'history' ? undefined : categoryId,
-          page,
-          limit: ITEMS_PER_PAGE 
-        });
-
-        // Séries já vêm ordenadas do backend
-        // Backend retorna TODAS as séries, frontend pagina com scroll infinito
-        
-        if (isFirstPage) {
-          // Primeira página: mostrar primeiras 50
-          setSeries(response.series.slice(0, ITEMS_PER_PAGE));
-          setTotalSeries(response.total);
-          setHasMore(response.series.length > ITEMS_PER_PAGE);
-          setCurrentPage(1);
-          
-          // Guardar todas as séries para paginação local
-          (window as any).__allSeries = response.series;
-        } else {
-          // Páginas seguintes: carregar mais do cache local
-          const allSeries = (window as any).__allSeries || [];
-          const offset = (page - 1) * ITEMS_PER_PAGE;
-          const nextBatch = allSeries.slice(offset, offset + ITEMS_PER_PAGE);
-          
-          setSeries(prev => [...prev, ...nextBatch]);
-          setHasMore(offset + ITEMS_PER_PAGE < allSeries.length);
-          setCurrentPage(page);
-        }
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
+
+      const data = await response.json();
+
+      console.log(`✅ ${data.series?.length || 0} séries únicas recebidas da API`);
+
+      // Extrair categorias
+      const cats = ['Todas', ...new Set(data.series.map((s: Serie) => s.categoria).filter(Boolean))];
+
+      setSeries(data.series);
+      setCategorias(cats as string[]);
     } catch (error) {
-      console.error('Error loading series:', error);
+      console.error('❌ Erro ao buscar séries:', error);
     } finally {
       setLoading(false);
-      setLoadingMore(false);
     }
   };
 
-  const loadMore = () => {
-    if (!loadingMore && hasMore && selectedCategory) {
-      loadSeries(selectedCategory, currentPage + 1);
+  const seriesFiltradas =
+    categoriaSelecionada === 'Todas'
+      ? series
+      : series.filter((s) => s.categoria === categoriaSelecionada);
+
+  // Séries a serem exibidas (lazy loading)
+  const seriesExibidas = seriesFiltradas.slice(0, displayedCount);
+  const hasMore = displayedCount < seriesFiltradas.length;
+
+  // Contar séries por categoria
+  const categoriasComContagem = categorias.map((cat) => ({
+    nome: cat,
+    count: cat === 'Todas' ? series.length : series.filter((s) => s.categoria === cat).length,
+  }));
+
+  // Resetar contador quando mudar categoria
+  useEffect(() => {
+    setDisplayedCount(ITEMS_PER_PAGE);
+  }, [categoriaSelecionada]);
+
+  // Lazy loading com Intersection Observer
+  const loadMore = useCallback(() => {
+    if (hasMore) {
+      setDisplayedCount((prev) => Math.min(prev + ITEMS_PER_PAGE, seriesFiltradas.length));
     }
-  };
+  }, [hasMore, seriesFiltradas.length]);
 
-  const { loadMoreRef } = useInfiniteScroll({
-    loading: loadingMore,
-    hasMore,
-    onLoadMore: loadMore,
-    threshold: 500,
-  });
+  useEffect(() => {
+    if (!loadMoreRef.current) return;
 
-  const handleSeriesClick = (seriesName: string) => {
-    setSelectedSeries(seriesName);
-  };
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
 
-  if (loading && categories.length === 0) {
+    observerRef.current.observe(loadMoreRef.current);
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+    };
+  }, [loadMore, hasMore]);
+
+  if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-netflix-black">
+      <div className="flex min-h-screen items-center justify-center bg-gray-900">
         <div className="text-center">
-          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-netflix-red border-r-transparent"></div>
-          <p className="mt-4 text-netflix-lightGray">Carregando...</p>
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-blue-500"></div>
+          <p className="text-gray-400">Carregando séries...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <>
-      <SidebarLayout
-        categories={categories}
-        selectedCategory={selectedCategory}
-        onCategorySelect={setSelectedCategory}
-        totalChannels={totalSeries}
-        favoritesCount={favorites.filter(fav => fav.content_type === 'series').length}
-      >
-        <div className="border-b border-netflix-mediumGray bg-netflix-darkGray p-6">
-          <h1 className="text-2xl font-bold text-white">
-            SÉRIES | {selectedCategory === 'all' ? 'TODAS' : 
-                      selectedCategory === 'favorites' ? 'FAVORITOS' :
-                      selectedCategory === 'history' ? 'HISTÓRICO' :
-                      selectedCategory === 'recent' ? 'ADICIONADO RECENTEMENTE' :
-                      categories.find(c => c.id === selectedCategory)?.name}
+    <div className="flex min-h-screen bg-gray-900">
+      {/* Sidebar de Categorias */}
+      <div className="w-80 flex-shrink-0 border-r border-gray-800 bg-gray-950 p-4">
+        <h2 className="mb-4 text-xl font-bold text-white">📂 Categorias</h2>
+
+        {/* Lista de categorias */}
+        <div className="space-y-1">
+          {categoriasComContagem.map((cat) => (
+            <button
+              key={cat.nome}
+              onClick={() => setCategoriaSelecionada(cat.nome)}
+              className={`flex w-full items-center justify-between rounded-lg px-4 py-3 text-left transition-colors ${
+                categoriaSelecionada === cat.nome
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              <span className="truncate">{cat.nome}</span>
+              <span className="ml-2 rounded-full bg-gray-700 px-2 py-1 text-xs">{cat.count}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Conteúdo Principal */}
+      <div className="flex-1 p-6">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-4xl font-bold text-white">
+            📺 {categoriaSelecionada === 'Todas' ? 'Todas as Séries' : categoriaSelecionada}
           </h1>
-          <p className="mt-1 text-sm text-netflix-lightGray">
-            {totalSeries} séries disponíveis
+          <p className="mt-2 text-gray-400">
+            Exibindo {seriesExibidas.length} de {seriesFiltradas.length} séries
           </p>
         </div>
 
-        <div className="p-6">
-          {loading && series.length === 0 ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-netflix-red border-r-transparent"></div>
-            </div>
-          ) : series.length > 0 ? (
-            <>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-                {series.map((seriesItem, index) => (
-                  <div
-                    key={`${seriesItem.name}-${seriesItem.firstEpisodeId || index}`}
-                    className="group relative aspect-[2/3] overflow-hidden rounded-lg bg-netflix-mediumGray transition-transform hover:scale-105 hover:z-10"
-                  >
-                    <button
-                      onClick={() => handleSeriesClick(seriesItem.name)}
-                      className="h-full w-full"
-                    >
-                      {seriesItem.logo && seriesItem.logo.startsWith('http') ? (
-                        <img
-                          src={seriesItem.logo}
-                          alt={seriesItem.name}
-                          className="h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full flex-col items-center justify-center p-4 text-center">
-                          <svg className="h-12 w-12 text-netflix-dimGray mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
-                          </svg>
-                          <span className="text-xs text-netflix-lightGray line-clamp-2">
-                            {seriesItem.name}
-                          </span>
-                        </div>
-                      )}
-
-                      <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100">
-                        <div className="absolute bottom-0 left-0 right-0 p-3">
-                          <p className="text-xs font-semibold text-white line-clamp-2">
-                            {seriesItem.name}
-                          </p>
-                          <p className="text-xs text-netflix-lightGray mt-1">
-                            {seriesItem.episodeCount} episódios
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="absolute top-2 left-2 rounded-full bg-black/70 px-2 py-1">
-                        <span className="text-xs text-white font-semibold">
-                          {seriesItem.episodeCount}
-                        </span>
-                      </div>
-                    </button>
-
-                    {/* Favorite Button */}
-                    {seriesItem.firstEpisodeId && seriesItem.name && (
-                      <div className="absolute right-2 top-2 z-10">
-                        <FavoriteButton
-                          contentId={seriesItem.firstEpisodeId}
-                          contentType="series"
-                          contentName={seriesItem.name}
-                          contentLogo={seriesItem.logo || ''}
-                          size="sm"
-                        />
+        {/* Grid de Séries */}
+        {seriesFiltradas.length === 0 ? (
+          <div className="py-20 text-center text-gray-500">
+            Nenhuma série encontrada nesta categoria
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {seriesExibidas.map((serie) => (
+                <button
+                  key={serie.nome}
+                  onClick={() => {
+                    setSelectedSerie(serie.nome);
+                    setIsModalOpen(true);
+                  }}
+                  className="group relative overflow-hidden rounded-lg transition-transform hover:scale-105"
+                >
+                  {/* Poster */}
+                  <div className="relative aspect-[2/3] w-full overflow-hidden bg-gray-800">
+                    {serie.logo_url ? (
+                      <img
+                        src={serie.logo_url}
+                        alt={serie.nome}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center">
+                        <svg
+                          className="h-16 w-16 text-gray-600"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"
+                          />
+                        </svg>
                       </div>
                     )}
-                  </div>
-                ))}
-              </div>
 
-              {/* Infinite Scroll Trigger */}
-              <div ref={loadMoreRef} className="py-8">
-                {loadingMore && (
-                  <div className="flex items-center justify-center">
-                    <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-netflix-red border-r-transparent"></div>
-                    <p className="ml-3 text-netflix-lightGray">Carregando mais séries...</p>
+                    {/* Overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+
+                    {/* Play Icon */}
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="rounded-full bg-blue-600 p-3">
+                        <svg className="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                        </svg>
+                      </div>
+                    </div>
                   </div>
-                )}
-                {!hasMore && series.length > 0 && (
-                  <p className="text-center text-netflix-dimGray">
-                    Você chegou ao fim da lista
-                  </p>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="py-12 text-center">
-              <p className="text-netflix-lightGray">Nenhuma série encontrada</p>
+
+                  {/* Info */}
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-3">
+                    <h3 className="line-clamp-2 text-sm font-semibold text-white">{serie.nome}</h3>
+                    <p className="mt-1 text-xs text-gray-400">
+                      {serie.totalTemporadas} temp. • {serie.totalEpisodios} eps.
+                    </p>
+                  </div>
+                </button>
+              ))}
             </div>
-          )}
-        </div>
-      </SidebarLayout>
 
-      {selectedSeries && (
+            {/* Loading Trigger */}
+            {hasMore && (
+              <div ref={loadMoreRef} className="py-8 text-center">
+                <div className="mx-auto inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-blue-500 border-r-transparent"></div>
+                <p className="mt-2 text-gray-400">Carregando mais séries...</p>
+              </div>
+            )}
+
+            {!hasMore && seriesExibidas.length > 0 && (
+              <div className="py-8 text-center text-gray-500">
+                ✓ Todas as séries foram carregadas
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Modal de Episódios */}
+      {selectedSerie && (
         <SeriesEpisodesModal
-          seriesName={selectedSeries}
-          isOpen={!!selectedSeries}
-          onClose={() => setSelectedSeries(null)}
+          seriesName={selectedSerie}
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false);
+            setSelectedSerie(null);
+          }}
         />
       )}
-    </>
+    </div>
   );
 }
+

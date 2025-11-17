@@ -53,16 +53,18 @@ export class PlaylistService {
 
     // Insert channels
     const channelInserts: ChannelInsert[] = parseResult.channels.map((channel) => ({
-      playlist_id: playlist.id,
       name: channel.name,
-      url: channel.url,
-      logo: channel.tvgLogo,
-      group_title: channel.groupTitle,
-      language: channel.language,
+      stream_url: channel.url,
+      logo_url: channel.tvgLogo,
       tvg_id: channel.tvgId,
-      raw_meta: channel.rawMeta,
       is_hls: channel.isHls,
       is_active: true,
+      metadata: {
+        playlist_id: playlist.id,
+        group_title: channel.groupTitle,
+        language: channel.language,
+        raw_meta: channel.rawMeta,
+      },
     }));
 
     await this.supabase.bulkInsertChannels(channelInserts);
@@ -153,16 +155,18 @@ export class PlaylistService {
 
     // Insert new channels
     const channelInserts: ChannelInsert[] = parseResult.channels.map((channel) => ({
-      playlist_id: playlist.id,
       name: channel.name,
-      url: channel.url,
-      logo: channel.tvgLogo,
-      group_title: channel.groupTitle,
-      language: channel.language,
+      stream_url: channel.url,
+      logo_url: channel.tvgLogo,
       tvg_id: channel.tvgId,
-      raw_meta: channel.rawMeta,
       is_hls: channel.isHls,
       is_active: true,
+      metadata: {
+        playlist_id: playlist.id,
+        group_title: channel.groupTitle,
+        language: channel.language,
+        raw_meta: channel.rawMeta,
+      },
     }));
 
     await this.supabase.bulkInsertChannels(channelInserts);

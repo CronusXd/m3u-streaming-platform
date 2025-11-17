@@ -1,250 +1,321 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import SidebarLayout from '@/components/layouts/SidebarLayout';
+import { useState, useEffect, useRef } from 'react';
+import { CanalCard } from '@/components/iptv/CanalCard';
 import VideoPlayerModal from '@/components/player/VideoPlayerModal';
-import FavoriteButton from '@/components/common/FavoriteButton';
-import { useFavorites } from '@/contexts/FavoritesContext';
+import type { CanalIPTV } from '@/types/iptv';
+import { optimizedCache, type MetadataEntry } from '@/lib/cache/optimized-cache';
 
-interface Channel {
-  id: string;
-  name: string;
-  display_name: string;
-  logo_url?: string;
-  category_name?: string;
-  category_id?: string;
-  stream_url: string;
-  is_hls: boolean;
-}
-
-interface Category {
-  id: string;
-  name: string;
+interface Categoria {
+  nome: string;
+  count: number;
 }
 
 export default function TVAoVivoPage() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>('all');
-  const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
+  const [todosCanais, setTodosCanais] = useState<CanalIPTV[]>([]); // Todos os canais
+  const [canais, setCanais] = useState<CanalIPTV[]>([]); // Canais filtrados
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [categoriaSelecionada, setCategoriaSelecionada] = useState<string>('');
+  const [busca, setBusca] = useState('');
   const [loading, setLoading] = useState(true);
-  const [totalChannels, setTotalChannels] = useState(0);
-  const { favorites, toggleFavorite, isFavorite } = useFavorites();
+  const [selectedCanal, setSelectedCanal] = useState<CanalIPTV | null>(null);
+  const [showPlayer, setShowPlayer] = useState(false);
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [loadingStream, setLoadingStream] = useState(false);
+  const fetchedRef = useRef(false); // Flag para evitar chamadas duplicadas
 
   useEffect(() => {
-    loadData();
+    // Evitar chamadas duplicadas (React Strict Mode)
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+    
+    carregarDados();
   }, []);
 
-  useEffect(() => {
-    if (selectedCategory) {
-      loadChannels(selectedCategory);
-    }
-  }, [selectedCategory, favorites]); // Recarregar quando favoritos mudarem
-
-  const loadData = async () => {
+  const carregarDados = async () => {
     try {
-      const { getCategoriesWithCounts } = await import('@/services/api');
-      const categoriesData = await getCategoriesWithCounts('live');
+      // Tentar carregar metadados do cache (30 dias)
+      console.log('📺 Tentando carregar canais do cache...');
+      const cachedMetadata = await optimizedCache.getMetadata('canal');
       
-      setCategories(categoriesData);
-      setLoading(false);
+      if (cachedMetadata.length > 0) {
+        console.log('✅ Canais carregados do CACHE!');
+        
+        // Extrair categorias dos metadados
+        const cats = [
+          { nome: 'Todas', count: cachedMetadata.length },
+          ...Array.from(new Set(cachedMetadata.map(item => item.categoria)))
+            .sort()
+            .map(cat => ({
+              nome: cat,
+              count: cachedMetadata.filter(item => item.categoria === cat).length
+            }))
+        ];
+        
+        setTodosCanais(cachedMetadata as any);
+        setCanais(cachedMetadata as any);
+        setCategorias(cats);
+        setLoading(false);
+        return;
+      }
+
+      // Cache miss - buscar da API
+      console.log('❌ Cache miss - buscando da API...');
+      
+      // Buscar canais da API
+      const response = await fetch('/api/iptv/canais');
+      const data = await response.json();
+
+      console.log(`✅ ${data.canais?.length || 0} canais recebidos da API`);
+
+      // LIMPAR NOMES
+      const canaisLimpos = (data.canais || []).map((canal: CanalIPTV) => {
+        const nomeOriginal = canal.nome;
+        let nomeLimpo = nomeOriginal;
+        
+        const lastQuoteIndex = nomeOriginal.lastIndexOf('"');
+        if (lastQuoteIndex > 0) {
+          const afterQuote = nomeOriginal.substring(lastQuoteIndex + 1);
+          if (afterQuote.includes(',')) {
+            nomeLimpo = afterQuote.substring(afterQuote.indexOf(',') + 1).trim();
+          } else {
+            nomeLimpo = afterQuote.trim();
+          }
+        }
+        
+        return {
+          ...canal,
+          nome: nomeLimpo
+        };
+      });
+
+      // Extrair categorias
+      const cats = [
+        { nome: 'Todas', count: canaisLimpos.length },
+        ...Array.from(new Set(canaisLimpos.map((c: CanalIPTV) => c.categoria)))
+          .sort()
+          .map(cat => ({
+            nome: cat as string,
+            count: canaisLimpos.filter((c: CanalIPTV) => c.categoria === cat).length
+          }))
+      ];
+
+      setTodosCanais(canaisLimpos);
+      setCanais(canaisLimpos);
+      setCategorias(cats);
+
+      // Salvar metadados no cache (30 dias)
+      try {
+        const metadata: MetadataEntry[] = canaisLimpos.map((canal: CanalIPTV) => ({
+          id: canal.id,
+          nome: canal.nome,
+          tipo: 'canal' as const,
+          categoria: canal.categoria,
+          logo_url: canal.logo_url || null,
+          epg_logo: canal.epg_logo || null,
+          timestamp: Date.now()
+        }));
+        
+        await optimizedCache.saveMetadata(metadata);
+        console.log('💾 Canais salvos no cache (TTL: 30 dias)');
+      } catch (cacheError) {
+        console.error('❌ Erro ao salvar no cache:', cacheError);
+      }
+
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('❌ Erro ao carregar dados:', error);
+    } finally {
       setLoading(false);
     }
   };
 
-  const loadChannels = async (categoryId: string) => {
-    setLoading(true);
+
+
+  // Filtrar canais localmente quando mudar categoria ou busca
+  useEffect(() => {
+    let canaisFiltrados = todosCanais;
+
+    // Filtrar por categoria
+    if (categoriaSelecionada) {
+      canaisFiltrados = canaisFiltrados.filter(
+        (canal) => canal.categoria === categoriaSelecionada
+      );
+    }
+
+    // Filtrar por busca
+    if (busca) {
+      canaisFiltrados = canaisFiltrados.filter((canal) =>
+        canal.nome.toLowerCase().includes(busca.toLowerCase())
+      );
+    }
+
+    setCanais(canaisFiltrados);
+  }, [categoriaSelecionada, busca, todosCanais]);
+
+  // Usar categorias já calculadas (não duplicar "Todas")
+  const categoriasComContagem = categorias.length > 0 
+    ? categorias 
+    : [{ nome: 'Todas', count: todosCanais.length }];
+
+  const handleCanalClick = async (canal: CanalIPTV) => {
+    setSelectedCanal(canal);
+    
+    // Se já tem url_stream, usar direto
+    if (canal.url_stream) {
+      setStreamUrl(canal.url_stream);
+      setShowPlayer(true);
+      return;
+    }
+
+    // Caso contrário, buscar do cache ou API
+    setLoadingStream(true);
     try {
-      const { getChannels, getRecentlyAdded } = await import('@/services/api');
+      // Tentar buscar do cache de streams (1 dia)
+      const cachedStream = await optimizedCache.getStream(canal.id);
       
-      if (categoryId === 'all') {
-        const response = await getChannels({ contentType: 'live', page: 1, limit: 1000 });
-        setChannels(response.channels);
-        setTotalChannels(response.total);
-      } else if (categoryId === 'favorites') {
-        // Filtrar apenas favoritos de tipo 'live'
-        const liveFavorites = favorites.filter(fav => fav.content_type === 'live');
-        
-        if (liveFavorites.length === 0) {
-          setChannels([]);
-          setTotalChannels(0);
-          setLoading(false);
-          return;
-        }
+      if (cachedStream) {
+        console.log('✅ Stream carregado do cache');
+        setStreamUrl(cachedStream.url_stream);
+        setShowPlayer(true);
+        return;
+      }
 
-        // Buscar stream_url APENAS dos canais favoritos
-        const { supabase } = await import('@/lib/supabase');
-        const contentIds = liveFavorites.map(fav => fav.content_id);
-        
-        const { data: channelsData } = await supabase
-          .from('channels')
-          .select('id, stream_url, is_hls')
-          .in('id', contentIds);
-
-        // Mapear favoritos para o formato de Channel
-        const favoriteChannels: Channel[] = liveFavorites.map(fav => {
-          const channelData = channelsData?.find(ch => ch.id === fav.content_id);
-          return {
-            id: fav.content_id,
-            name: fav.content_name,
-            stream_url: channelData?.stream_url || '',
-            logo_url: fav.content_logo,
-            is_hls: channelData?.is_hls || true,
-          };
-        });
-        
-        setChannels(favoriteChannels);
-        setTotalChannels(favoriteChannels.length);
-      } else if (categoryId === 'recent') {
-        const recentChannels = await getRecentlyAdded('live', 50);
-        setChannels(recentChannels);
-        setTotalChannels(recentChannels.length);
-      } else {
-        const response = await getChannels({ categoryId, contentType: 'live', page: 1, limit: 1000 });
-        setChannels(response.channels);
-        setTotalChannels(response.total);
+      // Cache miss - buscar da API
+      console.log('❌ Stream não encontrado no cache, buscando da API...');
+      const response = await fetch(`/api/iptv/canais/${canal.id}/stream`);
+      
+      if (!response.ok) {
+        throw new Error('Erro ao buscar stream');
       }
       
-      setLoading(false);
+      const data = await response.json();
+      
+      if (data.url_stream) {
+        // Salvar no cache (1 dia)
+        await optimizedCache.saveStream(canal.id, data.url_stream, data.is_hls || true);
+        setStreamUrl(data.url_stream);
+        setShowPlayer(true);
+      } else {
+        alert('Stream não disponível para este canal');
+      }
     } catch (error) {
-      console.error('Error loading channels:', error);
-      setLoading(false);
+      console.error('❌ Erro ao buscar stream:', error);
+      alert('Erro ao carregar stream. Tente novamente.');
+    } finally {
+      setLoadingStream(false);
     }
   };
 
-  const handleChannelClick = (channel: Channel) => {
-    setSelectedChannel(channel);
-  };
-
-  if (loading && categories.length === 0) {
+  if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-netflix-black">
+      <div className="flex items-center justify-center min-h-screen bg-gray-900">
         <div className="text-center">
-          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-netflix-red border-r-transparent"></div>
-          <p className="mt-4 text-netflix-lightGray">Carregando...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
+          <p className="text-gray-400">Carregando canais...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <>
-      <SidebarLayout
-        categories={categories}
-        selectedCategory={selectedCategory}
-        onCategorySelect={setSelectedCategory}
-        totalChannels={totalChannels}
-        favoritesCount={favorites.filter(fav => fav.content_type === 'live').length}
-      >
+    <div className="flex min-h-screen bg-gray-900">
+      {/* Sidebar de Categorias */}
+      <div className="w-80 flex-shrink-0 border-r border-gray-800 bg-gray-950 p-4">
+        <h2 className="mb-4 text-xl font-bold text-white">📂 Categorias</h2>
+
+        {/* Lista de categorias */}
+        <div className="space-y-1">
+          {categoriasComContagem.map((cat) => (
+            <button
+              key={cat.nome}
+              onClick={() => setCategoriaSelecionada(cat.nome === 'Todas' ? '' : cat.nome)}
+              className={`flex w-full items-center justify-between rounded-lg px-4 py-3 text-left transition-colors ${
+                (cat.nome === 'Todas' && categoriaSelecionada === '') || categoriaSelecionada === cat.nome
+                  ? 'bg-red-600 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              <span className="truncate">{cat.nome}</span>
+              <span className="ml-2 rounded-full bg-gray-700 px-2 py-1 text-xs">
+                {cat.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Conteúdo Principal */}
+      <div className="flex-1 p-6">
         {/* Header */}
-        <div className="border-b border-netflix-mediumGray bg-netflix-darkGray p-6">
-          <h1 className="text-2xl font-bold text-white">
-            {selectedCategory === 'all' && 'Todos os Canais'}
-            {selectedCategory === 'favorites' && 'Meus Favoritos'}
-            {selectedCategory && selectedCategory !== 'all' && selectedCategory !== 'favorites' && 
-              categories.find(c => c.id === selectedCategory)?.name
-            }
+        <div className="mb-6">
+          <h1 className="text-4xl font-bold text-white">
+            🔴 {categoriaSelecionada || 'Todos os Canais'}
           </h1>
-          <p className="mt-1 text-sm text-netflix-lightGray">
-            {channels.length} canais disponíveis
+          <p className="mt-2 text-gray-400">
+            Exibindo {canais.length} de {todosCanais.length} canais
           </p>
         </div>
 
-        {/* Channels Grid */}
-        <div className="p-6">
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-netflix-red border-r-transparent"></div>
-            </div>
-          ) : channels.length > 0 ? (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-              {channels.map((channel) => (
-                <div
-                  key={channel.id}
-                  className="group relative aspect-[2/3] overflow-hidden rounded-lg bg-netflix-mediumGray transition-transform hover:scale-105 hover:z-10"
-                >
-                  <button
-                    onClick={() => handleChannelClick(channel)}
-                    className="h-full w-full"
-                  >
-                    {/* Channel Logo/Poster */}
-                    {channel.logo_url && channel.logo_url.startsWith('http') ? (
-                      <img
-                        src={channel.logo_url}
-                        alt={channel.display_name || channel.name}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full flex-col items-center justify-center p-4 text-center">
-                        <svg className="h-12 w-12 text-netflix-dimGray mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                        <span className="text-xs text-netflix-lightGray line-clamp-2">
-                          {channel.display_name || channel.name}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100">
-                      <div className="absolute bottom-0 left-0 right-0 p-3">
-                        <p className="text-xs font-semibold text-white line-clamp-2">
-                          {channel.display_name || channel.name}
-                        </p>
-                        {channel.category_name && (
-                          <p className="text-xs text-netflix-lightGray line-clamp-1">
-                            {channel.category_name}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Play Icon Overlay */}
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-                      <div className="rounded-full bg-netflix-red/90 p-4">
-                        <svg className="h-8 w-8 text-white" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                        </svg>
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* Favorite Button */}
-                  <div className="absolute right-2 top-2 z-10">
-                    <FavoriteButton
-                      contentId={channel.id}
-                      contentType="live"
-                      contentName={channel.name}
-                      contentLogo={channel.logo_url}
-                      size="sm"
-                    />
-                  </div>
-
-                  {/* Live Badge */}
-                  <div className="absolute left-2 top-2 rounded bg-netflix-red px-2 py-1 text-xs font-semibold text-white">
-                    AO VIVO
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="py-12 text-center">
-              <p className="text-netflix-lightGray">Nenhum canal encontrado</p>
-            </div>
-          )}
+        {/* Busca */}
+        <div className="mb-6">
+          <input
+            type="text"
+            placeholder="Buscar canais..."
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="w-full max-w-md rounded-lg bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-600"
+          />
         </div>
-      </SidebarLayout>
+
+        {/* Grid de Canais */}
+        {canais.length === 0 ? (
+          <div className="py-20 text-center text-gray-500">
+            Nenhum canal encontrado
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            {canais.map((canal) => (
+              <CanalCard
+                key={canal.id}
+                canal={canal}
+                onClick={() => handleCanalClick(canal)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Loading Overlay */}
+      {loadingStream && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <div className="text-center">
+            <div className="inline-block h-16 w-16 animate-spin rounded-full border-4 border-red-600 border-r-transparent mb-4"></div>
+            <p className="text-white text-xl">Carregando canal...</p>
+          </div>
+        </div>
+      )}
 
       {/* Video Player Modal */}
-      <VideoPlayerModal
-        channel={selectedChannel}
-        isOpen={!!selectedChannel}
-        onClose={() => setSelectedChannel(null)}
-        onChannelSelect={handleChannelClick}
-      />
-    </>
+      {showPlayer && streamUrl && selectedCanal && (
+        <VideoPlayerModal
+          channel={{
+            id: selectedCanal.id,
+            name: selectedCanal.nome,
+            display_name: selectedCanal.nome,
+            stream_url: streamUrl,
+            logo_url: selectedCanal.logo_url || selectedCanal.epg_logo || undefined,
+            category_name: selectedCanal.categoria,
+            is_hls: true,
+          }}
+          isOpen={showPlayer}
+          onClose={() => {
+            setShowPlayer(false);
+            setStreamUrl(null);
+            setSelectedCanal(null);
+          }}
+          onChannelSelect={() => {}}
+        />
+      )}
+    </div>
   );
 }

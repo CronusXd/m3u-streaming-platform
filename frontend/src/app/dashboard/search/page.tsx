@@ -2,14 +2,12 @@
 
 import { useState } from 'react';
 import SearchBar from '@/components/search/SearchBar';
-import ChannelCard from '@/components/channels/ChannelCard';
 import VideoPlayerModal from '@/components/player/VideoPlayerModal';
-import { useFavorites } from '@/contexts/FavoritesContext';
 
 interface Channel {
   id: string;
   name: string;
-  display_name: string;
+  display_name?: string;
   logo_url?: string;
   category_name?: string;
   category_id?: string;
@@ -19,7 +17,6 @@ interface Channel {
 
 export default function SearchPage() {
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
-  const { toggleFavorite, isFavorite } = useFavorites();
 
   return (
     <div className="min-h-screen px-[4%] py-8">
@@ -27,7 +24,7 @@ export default function SearchPage() {
         <h1 className="mb-6 text-3xl font-bold text-white">Buscar Canais</h1>
         <SearchBar
           autoFocus
-          onResultSelect={(channel) => setSelectedChannel(channel)}
+          onResultSelect={(channel) => setSelectedChannel({ ...channel, is_hls: true })}
         />
       </div>
 
@@ -52,12 +49,16 @@ export default function SearchPage() {
       </div>
 
       {/* Video Player Modal */}
-      <VideoPlayerModal
-        channel={selectedChannel}
-        isOpen={!!selectedChannel}
-        onClose={() => setSelectedChannel(null)}
-        onChannelSelect={setSelectedChannel}
-      />
+      {selectedChannel && (
+        <VideoPlayerModal
+          channel={{
+            ...selectedChannel,
+            display_name: selectedChannel.display_name || selectedChannel.name
+          }}
+          isOpen={!!selectedChannel}
+          onClose={() => setSelectedChannel(null)}
+        />
+      )}
     </div>
   );
 }

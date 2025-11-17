@@ -20,7 +20,6 @@ interface VideoPlayerProps {
 export default function VideoPlayer({ 
   url, 
   title, 
-  autoplay = false,
   onError 
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -106,7 +105,7 @@ export default function VideoPlayer({
           });
         });
 
-        hls.on(Hls.Events.ERROR, (event, data) => {
+        hls.on(Hls.Events.ERROR, (_event, data) => {
           console.error('HLS Error:', data);
           if (data.fatal) {
             switch (data.type) {

@@ -2,12 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { useRouter } from 'next/navigation';
 
 interface Channel {
   id: string;
   name: string;
-  display_name: string;
+  display_name?: string;
   logo_url?: string;
   category_name?: string;
   stream_url: string;
@@ -27,7 +26,6 @@ export default function SearchBar({ onSearch, onResultSelect, autoFocus = false 
   const [showResults, setShowResults] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
 
   // Debounce search
   useEffect(() => {

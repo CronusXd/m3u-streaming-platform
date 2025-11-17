@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import VideoPlayerModal from '@/components/player/VideoPlayerModal';
 import { searchSeries, getTMDBImageUrl, formatRating, extractYear } from '@/services/tmdb';
-import { getPosterUrl, getBackdropUrl, getCreatorsString } from '@/utils/tmdb-helpers';
+import { getPosterUrl, getBackdropUrl } from '@/utils/tmdb-helpers';
 import { optimizedCache } from '@/lib/cache/optimized-cache';
 import type { ConteudoIPTV } from '@/types/iptv';
 
@@ -367,6 +367,7 @@ export default function SeriesDetailsModal({
           channel={{
             id: series.id,
             name: series.nome,
+            display_name: series.nome,
             stream_url: streamUrl,
             logo_url: posterUrl || undefined,
             is_hls: true,
@@ -376,7 +377,6 @@ export default function SeriesDetailsModal({
             setShowPlayer(false);
             setStreamUrl(null);
           }}
-          onChannelSelect={() => {}}
         />
       )}
     </>

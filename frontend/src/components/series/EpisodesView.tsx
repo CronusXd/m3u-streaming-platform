@@ -10,7 +10,7 @@ interface EpisodesViewProps {
   onBack: () => void;
 }
 
-export default function EpisodesView({ series, season, onBack }: EpisodesViewProps) {
+export default function EpisodesView({ series, season }: EpisodesViewProps) {
   const [episodes, setEpisodes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedEpisode, setSelectedEpisode] = useState<any>(null);

@@ -117,7 +117,7 @@ export class IPTVService {
     });
     
     if (error) throw error;
-    return (data || []).map(item => processConteudo<SerieIPTV>(item));
+    return (data || []).map((item: any) => processConteudo<SerieIPTV>(item));
   }
   
   static async getTemporadasSerie(nomeSerie: string) {
@@ -169,10 +169,10 @@ export class IPTVService {
     
     if (error) throw error;
     
-    let canais = (data || []).map(item => processConteudo<CanalIPTV>(item));
+    let canais = (data || []).map((item: any) => processConteudo<CanalIPTV>(item));
     
     if (busca) {
-      canais = canais.filter(canal => 
+      canais = canais.filter((canal: any) => 
         canal.nome.toLowerCase().includes(busca.toLowerCase())
       );
     }
@@ -272,6 +272,17 @@ export class IPTVService {
     
     if (error) throw error;
     return (data || []).map(item => processConteudo<ConteudoIPTV>(item));
+  }
+
+  static async getEpisodioPorId(id: string) {
+    const { data, error } = await supabase
+      .from('iptv')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
+    if (error) throw error;
+    return processConteudo<SerieIPTV>(data);
   }
 }
 

@@ -273,6 +273,7 @@ export default function FavoritesPage() {
           channel={{
             id: selectedChannel.id,
             name: selectedChannel.name,
+            display_name: selectedChannel.name,
             stream_url: selectedChannel.stream_url,
             logo_url: selectedChannel.logo_url,
             is_hls: true,

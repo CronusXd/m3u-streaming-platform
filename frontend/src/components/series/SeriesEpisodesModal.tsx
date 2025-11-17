@@ -16,18 +16,6 @@ interface Episode {
   rating?: number;
 }
 
-interface SeriesInfo {
-  name: string;
-  logo?: string;
-  director?: string;
-  releaseDate?: string;
-  genre?: string;
-  plot?: string;
-  rating?: number;
-  totalSeasons?: number;
-  totalEpisodes?: number;
-}
-
 interface SeasonGroup {
   season: number;
   episodes: Episode[];
@@ -48,7 +36,6 @@ export default function SeriesEpisodesModal({
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
   const [loading, setLoading] = useState(true);
   const [selectedEpisode, setSelectedEpisode] = useState<any>(null);
-  const [seriesInfo, setSeriesInfo] = useState<SeriesInfo | null>(null);
   const [activeTab, setActiveTab] = useState<'episodes' | 'info'>('episodes');
   const [tmdbData, setTmdbData] = useState<TMDBSeries | null>(null);
   const [tmdbEpisodes, setTmdbEpisodes] = useState<Map<number, TMDBEpisode[]>>(new Map());
@@ -147,11 +134,9 @@ export default function SeriesEpisodesModal({
   // Use TMDB data if available
   const posterUrl = tmdbData?.poster_path 
     ? getTMDBImageUrl(tmdbData.poster_path, 'w500')
-    : seriesInfo?.logo;
+    : undefined;
 
-  const backdropUrl = tmdbData?.backdrop_path
-    ? getTMDBImageUrl(tmdbData.backdrop_path, 'original')
-    : null;
+
 
   const director = tmdbData?.created_by?.[0]?.name || 'N/A';
   const releaseDate = tmdbData?.first_air_date 

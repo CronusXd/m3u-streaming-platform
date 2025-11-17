@@ -27,8 +27,6 @@ export default function VideoPlayerModal({
   channel,
   isOpen,
   onClose,
-  relatedChannels = [],
-  onChannelSelect,
 }: VideoPlayerModalProps) {
   // Handle escape key
   useEffect(() => {

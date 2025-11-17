@@ -82,7 +82,7 @@ export default function FilmesPage() {
         
         // Salvar metadados no cache (30 dias)
         try {
-          const metadata: MetadataEntry[] = filmesLimpos.map(filme => ({
+          const metadata: MetadataEntry[] = filmesLimpos.map((filme: any) => ({
             id: filme.id,
             nome: filme.nome,
             tipo: 'filme' as const,

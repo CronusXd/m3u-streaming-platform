@@ -6,10 +6,6 @@ import {
   HomeIcon,
   HeartIcon,
   ClockIcon,
-  PlusIcon,
-  TvIcon,
-  FilmIcon,
-  SignalIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';

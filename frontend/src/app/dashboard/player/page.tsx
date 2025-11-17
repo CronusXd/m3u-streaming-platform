@@ -52,12 +52,7 @@ function PlayerContent() {
         data = await IPTVService.getCanalPorId(id!);
       } else {
         // Para séries, buscar pelo ID do episódio
-        const { data: episodio } = await IPTVService['supabase']
-          .from('iptv')
-          .select('*')
-          .eq('id', id)
-          .single();
-        data = episodio;
+        data = await IPTVService.getEpisodioPorId(id!);
       }
 
       setConteudo(data);
@@ -107,7 +102,7 @@ function PlayerContent() {
         video.play().catch(console.error);
       });
 
-      hls.on(Hls.Events.ERROR, (event, data) => {
+      hls.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
           console.error('HLS Error:', data);
           setError('Erro ao carregar stream');

@@ -15,9 +15,9 @@ export default function FavoritesDebug() {
       {favorites.length > 0 && (
         <div className="mt-2 max-h-40 overflow-y-auto">
           <p className="font-semibold">IDs:</p>
-          {favorites.map(fav => (
+          {favorites.map((fav: any) => (
             <p key={fav.id} className="truncate">
-              {fav.channel_id.substring(0, 8)}... ({fav.content_type})
+              {fav.channel_id?.substring(0, 8)}... ({fav.content_type})
             </p>
           ))}
         </div>

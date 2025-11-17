@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import SeriesEpisodesModal from '@/components/series/SeriesEpisodesModal';
-import { optimizedCache, type MetadataEntry } from '@/lib/cache/optimized-cache';
+import { optimizedCache } from '@/lib/cache/optimized-cache';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -36,7 +36,7 @@ export default function SeriesPage() {
     // Limpar cache antigo ao montar o componente
     const clearOldCache = async () => {
       try {
-        await optimizedCache.clearMetadata('serie');
+        await optimizedCache.clearMetadata();
         console.log('🗑️ Cache antigo de séries limpo');
       } catch (error) {
         console.error('Erro ao limpar cache:', error);

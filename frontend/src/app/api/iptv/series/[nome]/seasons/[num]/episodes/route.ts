@@ -39,7 +39,7 @@ function parseSeasonEpisode(nome: string): { season: number; episode: number } |
 }
 
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: { nome: string; num: string } }
 ) {
   try {

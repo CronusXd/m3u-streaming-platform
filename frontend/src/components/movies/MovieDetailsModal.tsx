@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import VideoPlayerModal from '@/components/player/VideoPlayerModal';
-import { searchMovie, getTMDBImageUrl, formatRuntime, formatRating, extractYear, type TMDBMovie } from '@/services/tmdb';
+import { searchMovie, getTMDBImageUrl, formatRuntime, formatRating, extractYear } from '@/services/tmdb';
 import { getPosterUrl, getBackdropUrl } from '@/utils/tmdb-helpers';
 import { optimizedCache } from '@/lib/cache/optimized-cache';
 import type { ConteudoIPTV } from '@/types/iptv';
@@ -176,7 +176,7 @@ export default function MovieDetailsModal({
               <div className="absolute inset-0 h-screen">
                 <img
                   src={backdropUrl}
-                  alt={movie.name}
+                  alt={movie.nome}
                   className="h-full w-full object-cover opacity-30"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-transparent" />
@@ -264,7 +264,7 @@ export default function MovieDetailsModal({
                       <div>
                         <span className="text-netflix-dimGray">Gênero:</span>
                         <p className="text-white">
-                          {genres.map(g => g.name).join(', ')}
+                          {genres.map((g: any) => g.name).join(', ')}
                         </p>
                       </div>
                     )}
@@ -275,7 +275,7 @@ export default function MovieDetailsModal({
                     <div>
                       <span className="text-netflix-dimGray">Elenco:</span>
                       <p className="mt-1 text-white">
-                        {cast.map(c => c.name).join(', ')}
+                        {cast.map((c: any) => c.name).join(', ')}
                       </p>
                     </div>
                   )}
@@ -362,6 +362,7 @@ export default function MovieDetailsModal({
           channel={{
             id: movie.id,
             name: movie.nome,
+            display_name: movie.nome,
             stream_url: streamUrl,
             logo_url: posterUrl || undefined,
             is_hls: true,

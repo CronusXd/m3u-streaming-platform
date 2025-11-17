@@ -9,7 +9,7 @@ interface SeasonsViewProps {
   onBack: () => void;
 }
 
-export default function SeasonsView({ series, onSeasonClick, onBack }: SeasonsViewProps) {
+export default function SeasonsView({ series, onSeasonClick }: SeasonsViewProps) {
   const [seasons, setSeasons] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [tmdbData, setTmdbData] = useState<any>(null);

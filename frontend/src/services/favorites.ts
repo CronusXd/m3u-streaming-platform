@@ -171,4 +171,6 @@ export const addToWatchHistory = async (
     return data;
   } catch (error) {
     console.error('Error adding to watch history:', error);
-    r
+    return null;
+  }
+};

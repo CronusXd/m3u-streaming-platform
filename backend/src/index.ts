@@ -19,6 +19,7 @@ import searchRouter from './routes/search.routes';
 import favoritesRouter from './routes/favorites.routes';
 import healthRouter from './routes/health.routes';
 import metricsRouter from './routes/metrics.routes';
+import streamProxyRouter from './routes/stream-proxy.routes';
 
 // Create Express app
 const app: Application = express();
@@ -69,6 +70,7 @@ app.use('/api/playlists', playlistsRouter);
 app.use('/api/channels', channelsRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/favorites', favoritesRouter);
+app.use('/api', streamProxyRouter); // Proxy de streams (sem rate limit adicional)
 
 // ============================================
 // ERROR HANDLING

@@ -151,3 +151,39 @@
     animation-delay: 0.25s;
   }
 }
+
+/* Clappr Player Customization */
+@layer components {
+  /* Estilo do player Clappr */
+  [data-player] {
+    @apply w-full h-full;
+  }
+
+  /* Controles do player */
+  .media-control {
+    @apply bg-gradient-to-t from-black/80 to-transparent;
+  }
+
+  /* Barra de progresso */
+  .bar-container {
+    @apply bg-gray-700;
+  }
+
+  .bar-fill-1 {
+    @apply bg-netflix-red;
+  }
+
+  /* Botões */
+  .media-control-button {
+    @apply text-white hover:text-netflix-red transition-colors;
+  }
+
+  /* Volume */
+  .volume-bar-container {
+    @apply bg-gray-700;
+  }
+
+  .volume-bar-fill {
+    @apply bg-white;
+  }
+}

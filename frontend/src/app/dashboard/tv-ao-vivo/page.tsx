@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { CanalCard } from '@/components/iptv/CanalCard';
 import VideoPlayerModal from '@/components/player/VideoPlayerModal';
 import type { CanalIPTV } from '@/types/iptv';
@@ -13,7 +13,6 @@ interface Categoria {
 
 export default function TVAoVivoPage() {
   const [todosCanais, setTodosCanais] = useState<CanalIPTV[]>([]); // Todos os canais
-  const [canais, setCanais] = useState<CanalIPTV[]>([]); // Canais filtrados
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [categoriaSelecionada, setCategoriaSelecionada] = useState<string>('');
   const [busca, setBusca] = useState('');
@@ -22,10 +21,10 @@ export default function TVAoVivoPage() {
   const [showPlayer, setShowPlayer] = useState(false);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [loadingStream, setLoadingStream] = useState(false);
-  const fetchedRef = useRef(false); // Flag para evitar chamadas duplicadas
+  const fetchedRef = useRef(false);
 
   useEffect(() => {
-    // Evitar chamadas duplicadas (React Strict Mode)
+    // Evitar chamadas duplicadas
     if (fetchedRef.current) return;
     fetchedRef.current = true;
     
@@ -34,105 +33,70 @@ export default function TVAoVivoPage() {
 
   const carregarDados = async () => {
     try {
-      // Tentar carregar metadados do cache (30 dias)
-      console.log('📺 Tentando carregar canais do cache...');
-      const cachedMetadata = await optimizedCache.getMetadata('canal');
+      console.log('📺 Verificando cache de canais...');
       
-      if (cachedMetadata.length > 0) {
-        console.log('✅ Canais carregados do CACHE!');
+      // 1. Verificar cache de pré-carregamento
+      let allChannels = await optimizedCache.getAllChannelsWithStreams();
+
+      // 2. Se cache vazio ou inválido, baixar e salvar
+      if (!allChannels || !allChannels.channels || allChannels.channels.length === 0) {
+        console.log('⚠️ Cache vazio ou inválido, baixando canais...');
         
-        // Extrair categorias dos metadados
-        const cats = [
-          { nome: 'Todas', count: cachedMetadata.length },
-          ...Array.from(new Set(cachedMetadata.map(item => item.categoria)))
-            .sort()
-            .map(cat => ({
-              nome: cat,
-              count: cachedMetadata.filter(item => item.categoria === cat).length
-            }))
-        ];
-        
-        setTodosCanais(cachedMetadata as any);
-        setCanais(cachedMetadata as any);
-        setCategorias(cats);
-        setLoading(false);
-        return;
+        try {
+          const response = await fetch('/api/iptv/preload/channels');
+          if (!response.ok) throw new Error('Erro ao buscar canais');
+          
+          const data = await response.json();
+          
+          // Salvar no cache (30 dias)
+          await optimizedCache.saveAllChannelsWithStreams(data);
+          console.log(`✅ ${data.channels.length} canais baixados e salvos no cache`);
+          
+          allChannels = data;
+        } catch (error) {
+          console.error('❌ Erro ao baixar canais:', error);
+          setLoading(false);
+          return;
+        }
+      } else {
+        console.log(`✅ ${allChannels.channels.length} canais do CACHE`);
       }
 
-      // Cache miss - buscar da API
-      console.log('❌ Cache miss - buscando da API...');
-      
-      // Buscar canais da API
-      const response = await fetch('/api/iptv/canais');
-      const data = await response.json();
-
-      console.log(`✅ ${data.canais?.length || 0} canais recebidos da API`);
-
-      // LIMPAR NOMES
-      const canaisLimpos = (data.canais || []).map((canal: CanalIPTV) => {
-        const nomeOriginal = canal.nome;
-        let nomeLimpo = nomeOriginal;
-        
-        const lastQuoteIndex = nomeOriginal.lastIndexOf('"');
-        if (lastQuoteIndex > 0) {
-          const afterQuote = nomeOriginal.substring(lastQuoteIndex + 1);
-          if (afterQuote.includes(',')) {
-            nomeLimpo = afterQuote.substring(afterQuote.indexOf(',') + 1).trim();
-          } else {
-            nomeLimpo = afterQuote.trim();
-          }
-        }
-        
-        return {
-          ...canal,
-          nome: nomeLimpo
-        };
-      });
+      // Converter para formato esperado
+      const canaisFormatted: CanalIPTV[] = allChannels.channels.map((c: any) => ({
+        id: c.id,
+        nome: c.name,
+        categoria: c.category || 'Sem Categoria',
+        logo_url: c.logo_url,
+        stream_url: c.stream_url, // ⚡ Stream já incluído!
+        is_hls: c.is_hls,
+      }));
 
       // Extrair categorias
       const cats = [
-        { nome: 'Todas', count: canaisLimpos.length },
-        ...Array.from(new Set(canaisLimpos.map((c: CanalIPTV) => c.categoria)))
+        { nome: 'Todas', count: canaisFormatted.length },
+        ...Array.from(new Set(canaisFormatted.map((c) => c.categoria)))
           .sort()
-          .map(cat => ({
+          .map((cat) => ({
             nome: cat as string,
-            count: canaisLimpos.filter((c: CanalIPTV) => c.categoria === cat).length
-          }))
+            count: canaisFormatted.filter((c) => c.categoria === cat).length,
+          })),
       ];
 
-      setTodosCanais(canaisLimpos);
-      setCanais(canaisLimpos);
+      setTodosCanais(canaisFormatted);
       setCategorias(cats);
-
-      // Salvar metadados no cache (30 dias)
-      try {
-        const metadata: MetadataEntry[] = canaisLimpos.map((canal: CanalIPTV) => ({
-          id: canal.id,
-          nome: canal.nome,
-          tipo: 'canal' as const,
-          categoria: canal.categoria,
-          logo_url: canal.logo_url || null,
-          epg_logo: canal.epg_logo || null,
-          timestamp: Date.now()
-        }));
-        
-        await optimizedCache.saveMetadata(metadata);
-        console.log('💾 Canais salvos no cache (TTL: 30 dias)');
-      } catch (cacheError) {
-        console.error('❌ Erro ao salvar no cache:', cacheError);
-      }
+      setLoading(false);
 
     } catch (error) {
       console.error('❌ Erro ao carregar dados:', error);
-    } finally {
       setLoading(false);
     }
   };
 
 
 
-  // Filtrar canais localmente quando mudar categoria ou busca
-  useEffect(() => {
+  // Filtrar canais usando useMemo (sem re-render)
+  const canais = useMemo(() => {
     let canaisFiltrados = todosCanais;
 
     // Filtrar por categoria
@@ -149,7 +113,7 @@ export default function TVAoVivoPage() {
       );
     }
 
-    setCanais(canaisFiltrados);
+    return canaisFiltrados;
   }, [categoriaSelecionada, busca, todosCanais]);
 
   // Usar categorias já calculadas (não duplicar "Todas")
@@ -160,28 +124,51 @@ export default function TVAoVivoPage() {
   const handleCanalClick = async (canal: CanalIPTV) => {
     setSelectedCanal(canal);
     
-    // Se já tem url_stream, usar direto
-    if (canal.url_stream) {
-      setStreamUrl(canal.url_stream);
-      setShowPlayer(true);
+    // Stream já está incluído no canal (do cache de pré-carregamento)
+    if (canal.stream_url) {
+      console.log('✅ Stream do cache de pré-carregamento');
+      
+      // Converter para URL segura (proxy se HTTP)
+      const { getSecureStreamUrl } = await import('@/utils/stream-url');
+      const secureUrl = getSecureStreamUrl(canal.stream_url);
+      
+      if (secureUrl) {
+        setStreamUrl(secureUrl);
+        setShowPlayer(true);
+      } else {
+        alert('URL do stream inválida');
+      }
       return;
     }
 
-    // Caso contrário, buscar do cache ou API
+    // Fallback: Se não tem stream_url, buscar do cache completo
     setLoadingStream(true);
     try {
-      // Tentar buscar do cache de streams (1 dia)
-      const cachedStream = await optimizedCache.getStream(canal.id);
+      const allChannels = await optimizedCache.getAllChannelsWithStreams();
       
-      if (cachedStream) {
-        console.log('✅ Stream carregado do cache');
-        setStreamUrl(cachedStream.url_stream);
-        setShowPlayer(true);
-        return;
+      if (allChannels && allChannels.channels) {
+        const canalComStream = allChannels.channels.find((c: any) => c.id === canal.id);
+        
+        if (canalComStream && canalComStream.stream_url) {
+          console.log('✅ Stream encontrado no cache completo');
+          
+          // Converter para URL segura (proxy se HTTP)
+          const { getSecureStreamUrl } = await import('@/utils/stream-url');
+          const secureUrl = getSecureStreamUrl(canalComStream.stream_url);
+          
+          if (secureUrl) {
+            setStreamUrl(secureUrl);
+            setShowPlayer(true);
+          } else {
+            alert('URL do stream inválida');
+          }
+          setLoadingStream(false);
+          return;
+        }
       }
 
-      // Cache miss - buscar da API
-      console.log('❌ Stream não encontrado no cache, buscando da API...');
+      // Se ainda não encontrou, buscar da API (último recurso)
+      console.log('⚠️ Stream não encontrado no cache, buscando da API...');
       const response = await fetch(`/api/iptv/canais/${canal.id}/stream`);
       
       if (!response.ok) {
@@ -191,10 +178,16 @@ export default function TVAoVivoPage() {
       const data = await response.json();
       
       if (data.url_stream) {
-        // Salvar no cache (1 dia)
-        await optimizedCache.saveStream(canal.id, data.url_stream, data.is_hls || true);
-        setStreamUrl(data.url_stream);
-        setShowPlayer(true);
+        // Converter para URL segura (proxy se HTTP)
+        const { getSecureStreamUrl } = await import('@/utils/stream-url');
+        const secureUrl = getSecureStreamUrl(data.url_stream);
+        
+        if (secureUrl) {
+          setStreamUrl(secureUrl);
+          setShowPlayer(true);
+        } else {
+          alert('URL do stream inválida');
+        }
       } else {
         alert('Stream não disponível para este canal');
       }

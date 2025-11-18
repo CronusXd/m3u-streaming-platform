@@ -45,20 +45,20 @@ export async function GET(
   try {
     const seriesName = decodeURIComponent(params.nome);
 
-    console.log(`📺 Buscando temporadas para: ${seriesName}`);
+    console.log(`📺 [API] Buscando temporadas para: "${seriesName}"`);
 
-    // Buscar todos os episódios da série
+    // Buscar todos os episódios da série (usando LIKE para pegar variações do nome)
     const { data: episodes, error } = await supabase
       .from('iptv')
       .select('*')
       .eq('tipo', 'serie')
-      .eq('nome', seriesName)
+      .ilike('nome', `${seriesName}%`)
       .eq('is_active', true)
       .order('temporada', { ascending: true })
       .order('episodio', { ascending: true });
 
     if (error) {
-      console.error('❌ Erro ao buscar episódios:', error);
+      console.error('❌ [API] Erro ao buscar episódios:', error);
       return NextResponse.json(
         { error: 'Erro ao buscar episódios', details: String(error) },
         { status: 500 }
@@ -66,11 +66,14 @@ export async function GET(
     }
 
     if (!episodes || episodes.length === 0) {
+      console.warn(`⚠️ [API] Nenhum episódio encontrado para: "${seriesName}"`);
       return NextResponse.json(
         { error: 'Série não encontrada' },
         { status: 404 }
       );
     }
+
+    console.log(`📊 [API] Total de ${episodes.length} episódios encontrados`);
 
     // Agrupar episódios por temporada
     const seasonsMap = new Map<number, any>();
@@ -78,13 +81,16 @@ export async function GET(
     episodes.forEach((episode) => {
       let temporada = episode.temporada;
 
-      // Tentar extrair temporada do nome se não estiver definida
+      // Tentar extrair temporada do nome_episodio ou nome se não estiver definida
       if (temporada === null || temporada === undefined) {
-        const parsed = parseSeasonEpisode(episode.nome);
+        const nomeParaParsear = episode.nome_episodio || episode.nome;
+        const parsed = parseSeasonEpisode(nomeParaParsear);
         if (parsed) {
           temporada = parsed.season;
+          console.log(`🔍 [API] Temporada extraída: ${nomeParaParsear} → T${temporada}`);
         } else {
           temporada = 1; // Default
+          console.warn(`⚠️ [API] Temporada não encontrada, usando padrão T1: ${nomeParaParsear}`);
         }
       }
 
@@ -105,7 +111,7 @@ export async function GET(
       (a, b) => a.temporada - b.temporada
     );
 
-    console.log(`✅ ${seasons.length} temporadas encontradas`);
+    console.log(`✅ [API] ${seasons.length} temporadas encontradas:`, seasons.map(s => `T${s.temporada} (${s.totalEpisodios} eps)`).join(', '));
 
     return NextResponse.json({
       series: seriesName,

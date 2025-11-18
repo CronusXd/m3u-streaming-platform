@@ -76,28 +76,51 @@ export default function MovieDetailsModal({
   };
 
   const handlePlay = async () => {
-    // Se já tem stream_url, usar direto
+    // 1. Stream já incluído no filme (do cache de pré-carregamento)
     if (movie?.stream_url) {
-      setStreamUrl(movie.stream_url);
-      setShowPlayer(true);
+      console.log('✅ Stream do cache de pré-carregamento');
+      
+      // Converter para URL segura (proxy se HTTP)
+      const { getSecureStreamUrl } = await import('@/utils/stream-url');
+      const secureUrl = getSecureStreamUrl(movie.stream_url);
+      
+      if (secureUrl) {
+        setStreamUrl(secureUrl);
+        setShowPlayer(true);
+      } else {
+        alert('URL do stream inválida');
+      }
       return;
     }
 
-    // Caso contrário, buscar do cache ou API
+    // 2. Fallback: Buscar do cache completo
     setLoadingStream(true);
     try {
-      // Tentar buscar do cache de streams (1 dia)
-      const cachedStream = await optimizedCache.getStream(movie!.id);
+      const allMovies = await optimizedCache.getAllMoviesWithStreams();
       
-      if (cachedStream) {
-        console.log('✅ Stream carregado do cache');
-        setStreamUrl(cachedStream.url_stream);
-        setShowPlayer(true);
-        return;
+      if (allMovies && allMovies.movies) {
+        const filmeComStream = allMovies.movies.find((m: any) => m.id === movie!.id);
+        
+        if (filmeComStream && filmeComStream.stream_url) {
+          console.log('✅ Stream encontrado no cache completo');
+          
+          // Converter para URL segura (proxy se HTTP)
+          const { getSecureStreamUrl } = await import('@/utils/stream-url');
+          const secureUrl = getSecureStreamUrl(filmeComStream.stream_url);
+          
+          if (secureUrl) {
+            setStreamUrl(secureUrl);
+            setShowPlayer(true);
+          } else {
+            alert('URL do stream inválida');
+          }
+          setLoadingStream(false);
+          return;
+        }
       }
 
-      // Cache miss - buscar da API
-      console.log('❌ Stream não encontrado no cache, buscando da API...');
+      // 3. Último recurso: Buscar da API
+      console.log('⚠️ Stream não encontrado no cache, buscando da API...');
       const response = await fetch(`/api/iptv/filmes/${movie!.id}/stream`);
       
       if (!response.ok) {
@@ -107,10 +130,16 @@ export default function MovieDetailsModal({
       const data = await response.json();
       
       if (data.url_stream) {
-        // Salvar no cache (1 dia)
-        await optimizedCache.saveStream(movie!.id, data.url_stream, data.is_hls || true);
-        setStreamUrl(data.url_stream);
-        setShowPlayer(true);
+        // Converter para URL segura (proxy se HTTP)
+        const { getSecureStreamUrl } = await import('@/utils/stream-url');
+        const secureUrl = getSecureStreamUrl(data.url_stream);
+        
+        if (secureUrl) {
+          setStreamUrl(secureUrl);
+          setShowPlayer(true);
+        } else {
+          alert('URL do stream inválida');
+        }
       } else {
         alert('Stream não disponível para este filme');
       }

@@ -93,7 +93,7 @@ export default function SeriesDetailsModal({
       
       if (cachedStream) {
         console.log('✅ Stream carregado do cache');
-        setStreamUrl(cachedStream.url_stream);
+        setStreamUrl(cachedStream);
         setShowPlayer(true);
         return;
       }
@@ -110,7 +110,7 @@ export default function SeriesDetailsModal({
       
       if (data.url_stream) {
         // Salvar no cache (1 dia)
-        await optimizedCache.saveStream(series!.id, data.url_stream, data.is_hls || true);
+        await optimizedCache.saveStream(series!.id, data.url_stream);
         setStreamUrl(data.url_stream);
         setShowPlayer(true);
       } else {

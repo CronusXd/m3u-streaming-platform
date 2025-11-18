@@ -20,6 +20,8 @@
     "@supabase/auth-helpers-nextjs": "^0.8.7",
     "@supabase/supabase-js": "^2.39.0",
     "@tanstack/react-query": "^5.90.8",
+    "clappr": "^0.3.13",
+    "clappr-level-selector-plugin": "^0.2.1",
     "clsx": "^2.0.0",
     "hls.js": "^1.6.14",
     "lucide-react": "^0.553.0",

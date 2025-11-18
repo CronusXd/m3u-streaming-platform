@@ -4,6 +4,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import NetflixHeader from './NetflixHeader';
+import { preloadService } from '@/services/preload';
+import PreloadProgressIndicator from '@/components/common/PreloadProgress';
 
 interface NetflixLayoutProps {
   children: React.ReactNode;
@@ -18,6 +20,18 @@ export default function NetflixLayout({ children }: NetflixLayoutProps) {
       router.push('/login');
     }
   }, [user, loading, router]);
+
+  // Pré-carregar dados quando usuário loga
+  useEffect(() => {
+    if (user && !loading) {
+      console.log('👤 Usuário logado, iniciando pré-carregamento...');
+      
+      // Pré-carregar em background (não bloqueia UI)
+      preloadService.preloadAll().catch((error) => {
+        console.error('❌ Erro no pré-carregamento:', error);
+      });
+    }
+  }, [user, loading]);
 
   if (loading) {
     return (
@@ -40,6 +54,9 @@ export default function NetflixLayout({ children }: NetflixLayoutProps) {
       <main className="pt-16">
         {children}
       </main>
+      
+      {/* Indicador de progresso do pré-carregamento */}
+      <PreloadProgressIndicator />
     </div>
   );
 }

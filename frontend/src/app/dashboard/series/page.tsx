@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import SeriesEpisodesModal from '@/components/series/SeriesEpisodesModal';
-import { optimizedCache } from '@/lib/cache/optimized-cache';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -26,49 +25,77 @@ export default function SeriesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
-  const fetchedRef = useRef(false); // Flag para evitar chamadas duplicadas
 
   useEffect(() => {
-    // Evitar chamadas duplicadas (React Strict Mode)
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
+    let isMounted = true;
     
-    // Limpar cache antigo ao montar o componente
-    const clearOldCache = async () => {
-      try {
-        await optimizedCache.clearMetadata();
-        console.log('🗑️ Cache antigo de séries limpo');
-      } catch (error) {
-        console.error('Erro ao limpar cache:', error);
-      }
+    const fetchSeriesInterno = async () => {
+      if (!isMounted) return;
+      
+      // Usar o gerenciador de requisições para evitar duplicatas
+      const { requestManager } = await import('@/lib/request-manager');
+      
+      return requestManager.execute('fetch-series', async () => {
+        await fetchSeries();
+      });
     };
     
-    clearOldCache().then(() => fetchSeries());
+    fetchSeriesInterno();
+    
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const fetchSeries = async () => {
     try {
-      // SEMPRE buscar da API (que já retorna séries agrupadas)
-      console.log('📺 Buscando séries da API...');
+      console.log('📺 Verificando cache de séries...');
 
-      const response = await fetch('/api/iptv/series');
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      // 1. Verificar cache de pré-carregamento
+      const { optimizedCache } = await import('@/lib/cache/optimized-cache');
+      let allSeries = await optimizedCache.getAllSeriesWithStreams();
+
+      // 2. Se cache vazio ou inválido, baixar e salvar
+      if (!allSeries || !allSeries.series || allSeries.series.length === 0) {
+        console.log('⚠️ Cache vazio ou inválido, baixando séries...');
+        
+        try {
+          const response = await fetch('/api/iptv/preload/series');
+          if (!response.ok) throw new Error('Erro ao buscar séries');
+          
+          const data = await response.json();
+          
+          // Salvar no cache (30 dias)
+          await optimizedCache.saveAllSeriesWithStreams(data);
+          console.log(`✅ ${data.series.length} séries baixadas e salvas no cache`);
+          
+          allSeries = data;
+        } catch (error) {
+          console.error('❌ Erro ao baixar séries:', error);
+          setLoading(false);
+          return;
+        }
+      } else {
+        console.log(`✅ ${allSeries.series.length} séries do CACHE`);
       }
 
-      const data = await response.json();
-
-      console.log(`✅ ${data.series?.length || 0} séries únicas recebidas da API`);
+      // Converter para formato esperado
+      const seriesFormatted: Serie[] = allSeries.series.map((s: any) => ({
+        nome: s.name,
+        categoria: s.category || 'Sem Categoria',
+        logo_url: s.logo_url,
+        totalTemporadas: s.seasons?.length || 0,
+        totalEpisodios: s.seasons?.reduce((acc: number, season: any) => acc + season.episodes.length, 0) || 0,
+      }));
 
       // Extrair categorias
-      const cats = ['Todas', ...new Set(data.series.map((s: Serie) => s.categoria).filter(Boolean))];
+      const cats = ['Todas', ...new Set(seriesFormatted.map((s) => s.categoria).filter(Boolean))];
 
-      setSeries(data.series);
+      setSeries(seriesFormatted);
       setCategorias(cats as string[]);
+      setLoading(false);
     } catch (error) {
       console.error('❌ Erro ao buscar séries:', error);
-    } finally {
       setLoading(false);
     }
   };
@@ -78,22 +105,18 @@ export default function SeriesPage() {
       ? series
       : series.filter((s) => s.categoria === categoriaSelecionada);
 
-  // Séries a serem exibidas (lazy loading)
   const seriesExibidas = seriesFiltradas.slice(0, displayedCount);
   const hasMore = displayedCount < seriesFiltradas.length;
 
-  // Contar séries por categoria
   const categoriasComContagem = categorias.map((cat) => ({
     nome: cat,
     count: cat === 'Todas' ? series.length : series.filter((s) => s.categoria === cat).length,
   }));
 
-  // Resetar contador quando mudar categoria
   useEffect(() => {
     setDisplayedCount(ITEMS_PER_PAGE);
   }, [categoriaSelecionada]);
 
-  // Lazy loading com Intersection Observer
   const loadMore = useCallback(() => {
     if (hasMore) {
       setDisplayedCount((prev) => Math.min(prev + ITEMS_PER_PAGE, seriesFiltradas.length));
@@ -138,7 +161,6 @@ export default function SeriesPage() {
       <div className="w-80 flex-shrink-0 border-r border-gray-800 bg-gray-950 p-4">
         <h2 className="mb-4 text-xl font-bold text-white">📂 Categorias</h2>
 
-        {/* Lista de categorias */}
         <div className="space-y-1">
           {categoriasComContagem.map((cat) => (
             <button
@@ -159,7 +181,6 @@ export default function SeriesPage() {
 
       {/* Conteúdo Principal */}
       <div className="flex-1 p-6">
-        {/* Header */}
         <div className="mb-6">
           <h1 className="text-4xl font-bold text-white">
             📺 {categoriaSelecionada === 'Todas' ? 'Todas as Séries' : categoriaSelecionada}
@@ -169,7 +190,6 @@ export default function SeriesPage() {
           </p>
         </div>
 
-        {/* Grid de Séries */}
         {seriesFiltradas.length === 0 ? (
           <div className="py-20 text-center text-gray-500">
             Nenhuma série encontrada nesta categoria
@@ -186,7 +206,6 @@ export default function SeriesPage() {
                   }}
                   className="group relative overflow-hidden rounded-lg transition-transform hover:scale-105"
                 >
-                  {/* Poster */}
                   <div className="relative aspect-[2/3] w-full overflow-hidden bg-gray-800">
                     {serie.logo_url ? (
                       <img
@@ -212,10 +231,8 @@ export default function SeriesPage() {
                       </div>
                     )}
 
-                    {/* Overlay */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
 
-                    {/* Play Icon */}
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
                       <div className="rounded-full bg-blue-600 p-3">
                         <svg className="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -225,7 +242,6 @@ export default function SeriesPage() {
                     </div>
                   </div>
 
-                  {/* Info */}
                   <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-3">
                     <h3 className="line-clamp-2 text-sm font-semibold text-white">{serie.nome}</h3>
                     <p className="mt-1 text-xs text-gray-400">
@@ -236,7 +252,6 @@ export default function SeriesPage() {
               ))}
             </div>
 
-            {/* Loading Trigger */}
             {hasMore && (
               <div ref={loadMoreRef} className="py-8 text-center">
                 <div className="mx-auto inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-blue-500 border-r-transparent"></div>
@@ -253,7 +268,6 @@ export default function SeriesPage() {
         )}
       </div>
 
-      {/* Modal de Episódios */}
       {selectedSerie && (
         <SeriesEpisodesModal
           seriesName={selectedSerie}
@@ -267,4 +281,3 @@ export default function SeriesPage() {
     </div>
   );
 }
-

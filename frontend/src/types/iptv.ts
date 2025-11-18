@@ -71,6 +71,7 @@ export interface CanalIPTV extends ConteudoIPTV {
   tipo: 'canal';
   epg_id: string;
   epg_numero?: string;
+  stream_url?: string; // Alias para url_stream (compatibilidade)
 }
 
 export interface SerieAgrupada {

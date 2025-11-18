@@ -686,56 +686,48 @@ export interface SeasonGroup {
 }
 
 export async function getSeriesEpisodes(seriesName: string): Promise<SeasonGroup[]> {
-  // Sanitizar o nome da série
   const sanitizedName = seriesName.trim();
   
-  console.log('🔍 Buscando temporadas para série:', sanitizedName);
+  console.log('🔍 [getSeriesEpisodes] Buscando temporadas:', sanitizedName);
   
   try {
-    // Usar a nova API de temporadas
-    const response = await fetch(`/api/iptv/series/${encodeURIComponent(sanitizedName)}/seasons`);
+    const { optimizedCache } = await import('@/lib/cache/optimized-cache');
     
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    // Buscar APENAS do cache completo (pré-carregado)
+    const allSeries = await optimizedCache.getAllSeriesWithStreams();
+    
+    if (!allSeries || !allSeries.series) {
+      console.log('❌ Cache vazio - aguarde o pré-carregamento');
+      return [];
     }
     
-    const data = await response.json();
+    // Buscar série específica no cache
+    const serie = allSeries.series.find((s: any) => s.name === sanitizedName);
     
-    console.log(`✅ ${data.seasons?.length || 0} temporadas encontradas`);
-    
-    // Buscar episódios de cada temporada
-    const seasonGroups: SeasonGroup[] = [];
-    
-    for (const season of data.seasons || []) {
-      const episodesResponse = await fetch(
-        `/api/iptv/series/${encodeURIComponent(sanitizedName)}/seasons/${season.temporada}/episodes`
-      );
-      
-      if (episodesResponse.ok) {
-        const episodesData = await episodesResponse.json();
-        
-        const episodes: Episode[] = (episodesData.episodes || []).map((ep: any) => ({
-          id: ep.id,
-          name: ep.nome || `Episódio ${ep.episodio}`,
-          season: ep.temporada,
-          episode: ep.episodio,
-          streamUrl: ep.stream_url,
-          logo: ep.logo_url,
-        }));
-        
-        seasonGroups.push({
-          season: season.temporada,
-          episodes,
-        });
-      }
+    if (!serie || !serie.seasons) {
+      console.log(`⚠️ Série "${sanitizedName}" não encontrada no cache`);
+      return [];
     }
     
-    console.log(`✅ Total de ${seasonGroups.length} temporadas carregadas`);
+    console.log(`✅ Cache HIT: ${sanitizedName} (${serie.seasons.length} temporadas)`);
+    
+    // Converter para formato esperado
+    const seasonGroups: SeasonGroup[] = serie.seasons.map((season: any) => ({
+      season: season.season,
+      episodes: season.episodes.map((ep: any) => ({
+        id: ep.id,
+        name: ep.name,
+        season: season.season,
+        episode: ep.episode,
+        streamUrl: ep.stream_url || '', // ⚡ Stream já incluído!
+        logo: ep.logo_url || undefined,
+      })),
+    }));
     
     return seasonGroups.sort((a, b) => a.season - b.season);
   } catch (error) {
     console.error('❌ Erro ao buscar episódios:', error);
-    throw error;
+    return [];
   }
 }
 

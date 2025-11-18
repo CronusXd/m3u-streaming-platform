@@ -18,100 +18,76 @@ export default function FilmesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
-  const fetchedRef = useRef(false); // Flag para evitar chamadas duplicadas
 
   useEffect(() => {
-    // Evitar chamadas duplicadas (React Strict Mode)
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
+    let isMounted = true;
 
     async function fetchFilmes() {
-      try {
-        // Tentar carregar metadados do cache (30 dias)
-        console.log('🎬 Tentando carregar filmes do cache...');
-        const cachedMetadata = await optimizedCache.getMetadata('filme');
-        
-        let cachedData = null;
-        if (cachedMetadata.length > 0) {
-          cachedData = {
-            items: cachedMetadata,
-            categorias: [...new Set(cachedMetadata.map(item => item.categoria))].sort(),
-            timestamp: Date.now()
-          };
-        }
-
-        if (cachedData) {
-          console.log('✅ Filmes carregados do CACHE!');
-          setFilmes(cachedData.items as any);
-          setCategorias(['Todas', ...cachedData.categorias]);
-          setLoading(false);
-          return;
-        }
-
-        // Cache miss - buscar da API
-        console.log('❌ Cache miss - buscando da API...');
-        
-        const response = await fetch('/api/iptv/filmes');
-        const data = await response.json();
-        
-        console.log(`✅ ${data.filmes?.length || 0} filmes recebidos da API`);
-        
-        // LIMPAR NOMES
-        const filmesLimpos = (data.filmes || []).map((filme: FilmeIPTV) => {
-          const nomeOriginal = filme.nome;
-          let nomeLimpo = nomeOriginal;
-          
-          const lastQuoteIndex = nomeOriginal.lastIndexOf('"');
-          if (lastQuoteIndex > 0) {
-            const afterQuote = nomeOriginal.substring(lastQuoteIndex + 1);
-            if (afterQuote.includes(',')) {
-              nomeLimpo = afterQuote.substring(afterQuote.indexOf(',') + 1).trim();
-            } else {
-              nomeLimpo = afterQuote.trim();
-            }
-          }
-          
-          return {
-            ...filme,
-            nome: nomeLimpo
-          };
-        });
-        
-        // Extrair categorias
-        const cats = ['Todas', ...new Set(filmesLimpos.map((f: FilmeIPTV) => f.categoria).filter(Boolean))];
-        
-        // Salvar metadados no cache (30 dias)
+      if (!isMounted) return;
+      
+      // Usar o gerenciador de requisições para evitar duplicatas
+      const { requestManager } = await import('@/lib/request-manager');
+      
+      return requestManager.execute('fetch-filmes', async () => {
         try {
-          const metadata: MetadataEntry[] = filmesLimpos.map((filme: any) => ({
-            id: filme.id,
-            nome: filme.nome,
-            tipo: 'filme' as const,
-            categoria: filme.categoria,
-            logo_url: filme.logo_url || null,
-            epg_logo: filme.epg_logo || null,
-            tmdb_vote_average: filme.tmdb_vote_average,
-            tmdb_release_date: filme.tmdb_release_date,
-            visualizacoes: filme.visualizacoes,
-            timestamp: Date.now()
-          }));
+          console.log('🎬 Verificando cache de filmes...');
           
-          await optimizedCache.saveMetadata(metadata);
-          console.log('💾 Filmes salvos no cache (TTL: 30 dias)');
-        } catch (cacheError) {
-          console.error('❌ Erro ao salvar no cache:', cacheError);
+          // 1. Verificar cache de pré-carregamento
+          let allMovies = await optimizedCache.getAllMoviesWithStreams();
+
+          // 2. Se cache vazio ou inválido, baixar e salvar
+          if (!allMovies || !allMovies.movies || allMovies.movies.length === 0) {
+            console.log('⚠️ Cache vazio ou inválido, baixando filmes...');
+            
+            try {
+              const response = await fetch('/api/iptv/preload/movies');
+              if (!response.ok) throw new Error('Erro ao buscar filmes');
+              
+              const data = await response.json();
+              
+              // Salvar no cache (30 dias)
+              await optimizedCache.saveAllMoviesWithStreams(data);
+              console.log(`✅ ${data.movies.length} filmes baixados e salvos no cache`);
+              
+              allMovies = data;
+            } catch (error) {
+              console.error('❌ Erro ao baixar filmes:', error);
+              setLoading(false);
+              return;
+            }
+          } else {
+            console.log(`✅ ${allMovies.movies.length} filmes do CACHE`);
+          }
+
+          // Converter para formato esperado
+          const filmesFormatted: FilmeIPTV[] = allMovies.movies.map((m: any) => ({
+            id: m.id,
+            nome: m.name,
+            categoria: m.category || 'Sem Categoria',
+            logo_url: m.logo_url,
+            stream_url: m.stream_url, // ⚡ Stream já incluído!
+            is_hls: m.is_hls,
+          }));
+
+          // Extrair categorias
+          const cats = ['Todas', ...new Set(filmesFormatted.map((f) => f.categoria).filter(Boolean))];
+
+          setFilmes(filmesFormatted);
+          setCategorias(cats as string[]);
+          setLoading(false);
+        
+        } catch (error) {
+          console.error('❌ Erro ao buscar filmes:', error);
+          setLoading(false);
         }
-        
-        setFilmes(filmesLimpos);
-        setCategorias(cats as string[]);
-        
-      } catch (error) {
-        console.error('❌ Erro ao buscar filmes:', error);
-      } finally {
-        setLoading(false);
-      }
+      });
     }
 
     fetchFilmes();
+    
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const filmesFiltrados = categoriaSelecionada === 'Todas'

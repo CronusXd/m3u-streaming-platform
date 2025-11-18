@@ -55,13 +55,12 @@ export async function GET(
 
     console.log(`📺 Buscando episódios: ${seriesName} - Temporada ${seasonNumber}`);
 
-    // Buscar episódios da temporada
+    // Buscar episódios da temporada (usando LIKE para pegar variações do nome)
     const { data: episodes, error } = await supabase
       .from('iptv')
       .select('*')
       .eq('tipo', 'serie')
-      .eq('nome', seriesName)
-      .eq('temporada', seasonNumber)
+      .ilike('nome', `${seriesName}%`)
       .eq('is_active', true)
       .order('episodio', { ascending: true });
 
@@ -73,58 +72,46 @@ export async function GET(
       );
     }
 
-    // Se não encontrou com temporada exata, tentar parsear do nome
-    let finalEpisodes = episodes || [];
+    // Filtrar episódios da temporada específica
+    let finalEpisodes = (episodes || []).filter((ep) => {
+      let temporada = ep.temporada;
 
-    if (finalEpisodes.length === 0) {
-      console.log('⚠️ Nenhum episódio encontrado com temporada exata, tentando parsing...');
-
-      const { data: allEpisodes, error: allError } = await supabase
-        .from('iptv')
-        .select('*')
-        .eq('tipo', 'serie')
-        .eq('nome', seriesName)
-        .eq('is_active', true);
-
-      if (!allError && allEpisodes) {
-        finalEpisodes = allEpisodes.filter((ep) => {
-          let temporada = ep.temporada;
-
-          if (temporada === null || temporada === undefined) {
-            const parsed = parseSeasonEpisode(ep.nome);
-            if (parsed) {
-              temporada = parsed.season;
-            }
-          }
-
-          return temporada === seasonNumber;
-        });
+      // Tentar extrair do nome_episodio ou nome se não estiver definida
+      if (temporada === null || temporada === undefined) {
+        const nomeParaParsear = ep.nome_episodio || ep.nome;
+        const parsed = parseSeasonEpisode(nomeParaParsear);
+        if (parsed) {
+          temporada = parsed.season;
+        }
       }
-    }
+
+      return temporada === seasonNumber;
+    });
 
     // Processar episódios e garantir números sequenciais
     const processedEpisodes = finalEpisodes.map((ep, index) => {
       let episodio = ep.episodio;
 
-      // Se não tem número de episódio, tentar parsear ou usar índice
+      // Se não tem número de episódio, tentar parsear do nome_episodio ou nome
       if (episodio === null || episodio === undefined) {
-        const parsed = parseSeasonEpisode(ep.nome);
+        const nomeParaParsear = ep.nome_episodio || ep.nome;
+        const parsed = parseSeasonEpisode(nomeParaParsear);
         if (parsed) {
           episodio = parsed.episode;
         } else {
           episodio = index + 1;
-          console.warn(`⚠️ Episódio sem número: ${ep.nome}, usando ${episodio}`);
+          console.warn(`⚠️ Episódio sem número: ${nomeParaParsear}, usando ${episodio}`);
         }
       }
 
       return {
         id: ep.id,
-        nome: ep.nome || 'Episódio Sem Nome',
+        nome: ep.nome_episodio || ep.nome || 'Episódio Sem Nome',
         temporada: seasonNumber,
         episodio,
         logo_url: ep.logo_url,
         backdrop_url: ep.backdrop_url,
-        stream_url: ep.stream_url,
+        stream_url: ep.stream_url || ep.url_stream,
         visualizacoes: ep.visualizacoes || 0,
       };
     });

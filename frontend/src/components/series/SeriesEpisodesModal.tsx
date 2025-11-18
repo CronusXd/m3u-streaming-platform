@@ -42,13 +42,18 @@ export default function SeriesEpisodesModal({
 
   useEffect(() => {
     if (isOpen && seriesName) {
-      setTmdbData(null); // Reset data
-      setTmdbEpisodes(new Map()); // Reset episodes
-      loadEpisodes();
-      loadTMDBData();
+      // Só recarregar se não tiver dados ou se mudou a série
+      if (seasons.length === 0 || loading) {
+        loadEpisodes();
+      }
+      if (!tmdbData) {
+        loadTMDBData();
+      }
     } else {
+      // Limpar apenas ao fechar
       setTmdbData(null);
       setTmdbEpisodes(new Map());
+      setSeasons([]);
       setLoading(true);
     }
   }, [isOpen, seriesName]); // seriesName é string, não causa loop
@@ -81,17 +86,31 @@ export default function SeriesEpisodesModal({
   };
 
   const loadEpisodes = async () => {
+    // Evitar recarregar se já tem dados
+    if (seasons.length > 0) {
+      console.log('✅ [Modal] Temporadas já carregadas, pulando...');
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
+      console.log('🔍 [Modal] Buscando temporadas/episódios:', seriesName);
+      
+      // Buscar da API (sob demanda)
       const { getSeriesEpisodes } = await import('@/services/api');
       const seasonsData = await getSeriesEpisodes(seriesName);
+      
+      console.log(`✅ [Modal] ${seasonsData.length} temporadas carregadas`);
+      
       setSeasons(seasonsData);
       if (seasonsData.length > 0) {
         setSelectedSeason(seasonsData[0].season);
       }
+      
       setLoading(false);
     } catch (error) {
-      console.error('Error loading episodes:', error);
+      console.error('❌ [Modal] Error loading episodes:', error);
       setLoading(false);
     }
   };
@@ -119,11 +138,29 @@ export default function SeriesEpisodesModal({
   const currentSeasonEpisodes = seasons.find(s => s.season === selectedSeason)?.episodes || [];
   const enrichedEpisodes = currentSeasonEpisodes.map(getEnrichedEpisode);
 
-  const handleEpisodeClick = (episode: Episode) => {
+  const handleEpisodeClick = async (episode: Episode) => {
+    // Stream já vem do pré-carregamento (30 dias)
+    if (!episode.streamUrl) {
+      console.warn('⚠️ Episódio sem stream_url:', episode.name);
+      return;
+    }
+
+    console.log('✅ Reproduzindo episódio:', episode.name);
+    
+    // Converter para URL segura (proxy se HTTP)
+    const { getSecureStreamUrl } = await import('@/utils/stream-url');
+    const secureUrl = getSecureStreamUrl(episode.streamUrl);
+    
+    if (!secureUrl) {
+      alert('URL do stream inválida');
+      return;
+    }
+    
     setSelectedEpisode({
       id: episode.id,
       name: episode.name,
-      stream_url: episode.streamUrl,
+      display_name: episode.name,
+      stream_url: secureUrl, // ⚡ Stream seguro (HTTPS)!
       logo_url: episode.logo,
       is_hls: true,
     });
@@ -153,20 +190,14 @@ export default function SeriesEpisodesModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 overflow-y-auto">
-        {/* Backdrop */}
-        <div 
-          className="fixed inset-0 bg-black/90"
-          onClick={onClose}
-        />
-
-        {/* Modal */}
-        <div className="relative z-10 min-h-screen">
-          <div className="mx-auto max-w-6xl p-4">
+      <div className="fixed inset-0 z-50 overflow-y-auto bg-black">
+        {/* Modal Tela Cheia */}
+        <div className="relative min-h-screen">
+          <div className="mx-auto max-w-full p-0">
             {/* Close Button */}
             <button
               onClick={onClose}
-              className="absolute right-6 top-6 z-20 rounded-full bg-black/50 p-2 text-white transition-colors hover:bg-black/70"
+              className="fixed right-6 top-6 z-50 rounded-full bg-black/70 p-3 text-white transition-colors hover:bg-red-600"
             >
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -178,20 +209,20 @@ export default function SeriesEpisodesModal({
                 <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-netflix-red border-r-transparent"></div>
               </div>
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-6 px-8 py-6">
                 {/* Hero Section with Series Info */}
-                <div className="flex gap-6 rounded-xl bg-netflix-darkGray p-6">
+                <div className="flex gap-6 rounded-xl bg-netflix-darkGray p-8">
                   {/* Series Poster */}
                   <div className="flex-shrink-0">
                     {posterUrl ? (
                       <img
                         src={posterUrl}
                         alt={seriesName}
-                        className="h-64 w-44 rounded-lg object-cover shadow-lg"
+                        className="h-96 w-64 rounded-lg object-cover shadow-lg"
                       />
                     ) : (
-                      <div className="flex h-64 w-44 items-center justify-center rounded-lg bg-netflix-mediumGray">
-                        <svg className="h-16 w-16 text-netflix-dimGray" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <div className="flex h-96 w-64 items-center justify-center rounded-lg bg-netflix-mediumGray">
+                        <svg className="h-20 w-20 text-netflix-dimGray" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
                         </svg>
                       </div>
@@ -199,9 +230,9 @@ export default function SeriesEpisodesModal({
                   </div>
 
                   {/* Series Details */}
-                  <div className="flex-1 space-y-4">
+                  <div className="flex-1 space-y-6">
                     <div>
-                      <h1 className="text-3xl font-bold text-white">{seriesName}</h1>
+                      <h1 className="text-5xl font-bold text-white">{seriesName}</h1>
                       <div className="mt-2 flex items-center gap-2">
                         {[...Array(5)].map((_, i) => (
                           <svg
@@ -221,7 +252,7 @@ export default function SeriesEpisodesModal({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="grid grid-cols-2 gap-6 text-base">
                       <div>
                         <span className="text-netflix-dimGray">Dirigido por:</span>
                         <p className="text-white">{director}</p>
@@ -241,8 +272,8 @@ export default function SeriesEpisodesModal({
                     </div>
 
                     <div>
-                      <span className="text-netflix-dimGray">Enredo:</span>
-                      <p className="mt-1 text-sm text-netflix-lightGray leading-relaxed">
+                      <span className="text-netflix-dimGray text-lg">Enredo:</span>
+                      <p className="mt-2 text-base text-netflix-lightGray leading-relaxed">
                         {overview}
                       </p>
                       {trailerUrl && (
@@ -308,7 +339,7 @@ export default function SeriesEpisodesModal({
 
                 {/* Episodes Grid */}
                 {activeTab === 'episodes' && (
-                  <div className="grid gap-4 pb-8 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid gap-3 pb-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                     {enrichedEpisodes.map((episode) => (
                       <button
                         key={episode.id}
@@ -334,15 +365,15 @@ export default function SeriesEpisodesModal({
                           
                           {/* Play Overlay */}
                           <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-                            <div className="rounded-full bg-netflix-red p-3">
-                              <svg className="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <div className="rounded-full bg-netflix-red p-2">
+                              <svg className="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 20 20">
                                 <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
                               </svg>
                             </div>
                           </div>
 
                           {/* Episode Number Badge */}
-                          <div className="absolute left-2 top-2 rounded bg-black/70 px-2 py-1 text-xs font-semibold text-white">
+                          <div className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-xs font-semibold text-white">
                             {episode.episode}
                           </div>
 
@@ -355,31 +386,10 @@ export default function SeriesEpisodesModal({
                         </div>
 
                         {/* Episode Info */}
-                        <div className="p-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <h3 className="text-sm font-semibold text-white line-clamp-2">
-                              {seriesName} - S{String(episode.season).padStart(2, '0')}E{String(episode.episode).padStart(2, '0')} - {episode.name}
-                            </h3>
-                          </div>
-                          {episode.rating && (
-                            <div className="mt-1 flex items-center gap-1">
-                              {[...Array(5)].map((_, i) => (
-                                <svg
-                                  key={i}
-                                  className={`h-3 w-3 ${i < episode.rating! ? 'text-yellow-400' : 'text-netflix-dimGray'}`}
-                                  fill="currentColor"
-                                  viewBox="0 0 20 20"
-                                >
-                                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                </svg>
-                              ))}
-                            </div>
-                          )}
-                          {episode.plot && (
-                            <p className="mt-2 text-xs text-netflix-dimGray line-clamp-2">
-                              {episode.plot}
-                            </p>
-                          )}
+                        <div className="p-2">
+                          <h3 className="text-xs font-semibold text-white line-clamp-1">
+                            S{String(episode.season).padStart(2, '0')}E{String(episode.episode).padStart(2, '0')} - {episode.name}
+                          </h3>
                         </div>
                       </button>
                     ))}

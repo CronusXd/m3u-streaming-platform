@@ -39,9 +39,17 @@ export default function VideoPlayer({
 
         console.log('🎬 Carregando stream...');
 
+        // Usar proxy do backend para URLs HTTPS com certificados inválidos
+        const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+        const streamUrl = url.startsWith('https://') 
+          ? `${backendUrl}/api/stream-proxy?url=${encodeURIComponent(url)}`
+          : url;
+
+        console.log('🔄 Usando proxy do backend para stream seguro');
+
         // Criar player Clappr
         const player = new Clappr.Player({
-          source: url,
+          source: streamUrl,
           parentId: `#${playerRef.current?.id}`,
           width: '100%',
           height: '100%',
@@ -61,6 +69,7 @@ export default function VideoPlayer({
 
         // Event listeners
         player.on(Clappr.Events.PLAYER_READY, () => {
+          console.log('✅ Stream carregado com sucesso');
           setIsLoading(false);
           setError(null);
         });
@@ -70,10 +79,7 @@ export default function VideoPlayer({
         });
 
         player.on(Clappr.Events.PLAYER_ERROR, (error: any) => {
-          // Logar apenas erros críticos (não 404 de recursos opcionais)
-          if (error?.code !== 404) {
-            console.error('❌ Erro crítico no player');
-          }
+          console.error('❌ Erro no player:', error);
           setError('Erro ao reproduzir o stream. O canal pode estar offline.');
           setIsLoading(false);
           onError?.(error?.message || 'Player error');
